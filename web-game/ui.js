@@ -26,11 +26,22 @@ window.addEventListener('DOMContentLoaded', () => {
     btn.addEventListener('click', () => switchScreen(btn.dataset.screen));
   });
 
-  // Tick loop — 1s on screens with live countdowns, 2s otherwise.
+  // Tick loop — 1s for live countdowns.
+  // Don't disrupt the user if they're typing into a form field
+  // (admin tables especially) — wholesale innerHTML replacement
+  // would steal focus and discard in-progress edits.
   setInterval(() => {
     if (!g.state) return;
     g.tickDecay();
-    renderActiveScreen();
+    const ae = document.activeElement;
+    const isEditing = ae && (
+      ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.tagName === 'SELECT'
+    );
+    if (isEditing) {
+      renderHeader();   // currency bar can still refresh
+    } else {
+      renderActiveScreen();
+    }
   }, 1000);
 
   // Wire sign-up form (might not exist on first render but listener is safe)
