@@ -1,0 +1,19 @@
+{
+  "name": "smooth-giraffe-web",
+  "version": "0.4.1",
+  "description": "Smooth Giraffe — browser-playable chibi pet collector. Serves itself as static files.",
+  "private": true,
+  "type": "commonjs",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "test": "node test.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ZENSEE1314/petme.git"
+  },
+  "license": "MIT"
+}

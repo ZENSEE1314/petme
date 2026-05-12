@@ -1,0 +1,14 @@
+# Nixpacks build config — used by Railway.
+# Tells the build pipeline this is a Node app with no install step
+# (the static server has zero npm dependencies).
+[phases.setup]
+nixPkgs = ["nodejs_20"]
+
+[phases.install]
+cmds = []
+
+[phases.build]
+cmds = []
+
+[start]
+cmd = "node web-game/server.js"
