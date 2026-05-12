@@ -9,6 +9,77 @@ A 3D chibi virtual pet collection game — Digimon/Pokémon vibe, cross-platform
 
 ---
 
+## What's in this repo right now
+
+### ✅ Done
+
+- **Full design** in [`design/GDD.md`](design/GDD.md): 30-pet dex (Common→Legendary + event Mythic), 4-currency economy, egg gacha with pity (50/100/200), direct + async trading with 5% trade-tax sink, monthly events, complete DB schema
+- **31-week execution plan** in [`design/PLAN.md`](design/PLAN.md)
+- **Backend schema** (10 SQL migrations) in [`server/supabase/migrations/`](server/supabase/migrations):
+  - 001 users / account flags / auto-create trigger
+  - 002 monster species + owned monsters (rarity, evolution chains)
+  - 003 items catalog + inventory
+  - 004 unified 4-currency ledger + balances view + cap-enforcement trigger
+  - 005 egg types + owned eggs + pity counters + daily purchase log
+  - 006 farm plots + auto-seed-9-plots-per-user trigger
+  - 007 battles (deterministic replay) + egg fragments
+  - 008 trades (direct + async) + audit log + velocity counter
+  - 009 events + quests + leaderboard
+  - 010 seed data — 30 launch pets, 4 egg tiers, items catalog
+- **Edge functions** in [`server/supabase/functions/`](server/supabase/functions):
+  - `_shared/supabase.ts` — auth helpers + clients
+  - `tick-needs/` — hourly cron, decays needs server-side (clock-cheat proof)
+  - `buy-egg/` — server-authoritative gacha roll with pity
+  - `hatch-egg/` — opens ready egg, creates monster
+  - `farm-claim/` — server-authoritative harvest
+  - `battle-simulate/` — async PvP with deterministic replay seed
+  - `trade-execute/` — atomic trade settlement with 5% tax sink
+- **Unity client scaffold** in [`client/Assets/Scripts/`](client/Assets/Scripts):
+  - `Core/GameManager.cs` — singleton entry point
+  - `Core/TimeService.cs` — server-time sync
+  - `Net/ApiClient.cs` — HttpClient wrapper for Supabase REST + Functions
+  - `Net/AuthManager.cs` — auth flows + PlayerPrefs persistence
+  - `Pet/PetState.cs` — client mirror of the `monsters` table
+- **Setup docs**: [`server/README.md`](server/README.md) · [`client/README.md`](client/README.md)
+- **Nano Banana prompt queue** in [`design/concepts/GENERATE_THESE.md`](design/concepts/GENERATE_THESE.md) — ready to fire on quota reset
+
+### ⏳ Next up
+
+1. **Install Unity locally** (user action) — see `client/README.md`
+2. **Create Supabase project + push migrations** (user action) — see `server/README.md`
+3. **Build the Boot scene** in Unity — first verifiable end-to-end ping of client → server
+4. **Generate concept art** — when Gemini quota resets
+5. **Phase 1: Care loop** — feed/clean/play/sleep on a placeholder cube monster
+
+## Project Layout
+
+```
+petme/
+├── README.md                                      # ← you are here
+├── .gitignore
+├── client/                                        # Unity 2022.3 LTS
+│   ├── README.md
+│   └── Assets/
+│       ├── Scripts/{Core,Pet,Farm,Battle,Training,Shop,Net,UI}/
+│       └── {Art,Audio,Prefabs,Scenes}/
+├── server/                                        # Supabase
+│   ├── README.md
+│   └── supabase/
+│       ├── config.toml
+│       ├── migrations/                            # 10 SQL files, run 001→010
+│       └── functions/                             # Deno edge functions
+├── shared/
+│   └── battle-formulas/                           # math shared between client + server
+└── design/
+    ├── PLAN.md                                    # 31-week master plan
+    ├── GDD.md                                     # canonical game design
+    └── concepts/                                  # visual concept art
+        ├── GENERATE_THESE.md                      # Nano Banana prompt queue
+        └── {logo,eggs,monsters,environment}/
+```
+
+---
+
 ## Project Layout
 
 ```
