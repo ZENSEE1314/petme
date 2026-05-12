@@ -237,12 +237,39 @@ function useItem(itemId) {
   return { item, pet };
 }
 
+/**
+ * Toggle sleep on/off for the active pet.
+ * - When asleep, the per-tick energy decay reverses to a +0.1/min gain
+ *   (= +1 every 10 real-world minutes), tracked via `sleepingSince`.
+ * - Hunger and cleanliness still decay as normal (pet still ages).
+ * - Auto-wakes at energy == 100.
+ */
 function sleepPet() {
   const pet = getActivePet();
   if (!pet) throw new Error('no active pet');
-  applyEffect(pet, { energy: 50, cleanliness: -5 });  // a nap costs a bit of clean
+  if (pet.sleepingSince) {
+    pet.sleepingSince = null;        // wake up
+  } else {
+    pet.sleepingSince = Date.now();  // fall asleep
+  }
   saveState();
   return pet;
+}
+
+function isSleeping(pet) {
+  return !!pet?.sleepingSince;
+}
+
+/**
+ * Seconds until the pet earns its next whole +1 energy point.
+ * Returns 0 if not sleeping or already at max.
+ */
+function secondsToNextEnergyPoint(pet) {
+  if (!pet?.sleepingSince || pet.energy >= 100) return 0;
+  const fraction = pet.energy - Math.floor(pet.energy);
+  const energyNeeded = 1 - fraction;
+  // +0.1 / min  =>  seconds = (energyNeeded / 0.1) * 60
+  return Math.max(0, Math.ceil((energyNeeded / CONFIG.sleepEnergyGainPerMin) * 60));
 }
 
 function playWithPet() {
@@ -268,12 +295,21 @@ function petPet() {  // free interaction, tiny mood boost
 function tickDecay() {
   const now = Date.now();
   const minutesElapsed = (now - state.lastTickAt) / 60000;
-  if (minutesElapsed < 0.05) return;  // less than 3s — skip
+  if (minutesElapsed < 0.01) return;   // <0.6s — skip
 
   for (const m of state.monsters) {
+    // Hunger + cleanliness always decay (pet ages whether awake or asleep)
     m.hunger      = clamp(m.hunger      - CONFIG.hungerDecayPerMin      * minutesElapsed, 0, 100);
     m.cleanliness = clamp(m.cleanliness - CONFIG.cleanlinessDecayPerMin * minutesElapsed, 0, 100);
-    m.energy      = clamp(m.energy      - CONFIG.energyDecayPerMin      * minutesElapsed, 0, 100);
+
+    // Energy: gain while sleeping, decay while awake
+    if (m.sleepingSince) {
+      m.energy = clamp(m.energy + CONFIG.sleepEnergyGainPerMin * minutesElapsed, 0, 100);
+      if (m.energy >= 100) m.sleepingSince = null;   // auto-wake at full
+    } else {
+      m.energy = clamp(m.energy - CONFIG.energyDecayPerMin * minutesElapsed, 0, 100);
+    }
+
     recomputeMood(m);
   }
   state.lastTickAt = now;
@@ -916,7 +952,7 @@ window.game = {
   // lifecycle
   bootGame, hasSave, newGame, resetGame, saveState, loadState,
   // pet
-  claimStarter, getActivePet, setActivePet, useItem, sleepPet, playWithPet, petPet,
+  claimStarter, getActivePet, setActivePet, useItem, sleepPet, isSleeping, secondsToNextEnergyPoint, playWithPet, petPet,
   // shop / eggs
   buyItem, buyEgg, hatchEgg, canBuyMoreEggsToday, redeemFragments,
   // battle

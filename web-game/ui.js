@@ -222,11 +222,16 @@ function renderHome() {
       ${needBar('⚡ Energy',       pet.energy,      'energy')}
     </div>
 
+    ${g.isSleeping(pet) ? renderSleepStatus(pet) : ''}
+
     <div class="actions-grid">
       ${actionGroup('Feed', foods, 'food')}
       ${actionGroup('Clean', meds.filter(([id]) => g.ITEM_BY_ID[id].effect.cleanliness), 'med')}
       ${actionGroup('Play', toys, 'toy')}
-      <button class="action-btn solo" id="sleep-btn">😴 Sleep<span class="action-sub">+50 Energy</span></button>
+      <button class="action-btn solo ${g.isSleeping(pet) ? 'sleeping' : ''}" id="sleep-btn">
+        ${g.isSleeping(pet) ? '⏰ Wake up' : '😴 Sleep'}
+        <span class="action-sub">${g.isSleeping(pet) ? 'tap to end' : '+1 Energy / 10 min'}</span>
+      </button>
       <button class="action-btn solo" id="play-bare-btn">🎾 Play<span class="action-sub">+10 Mood</span></button>
       <button class="action-btn solo" id="pet-btn">🤚 Pet<span class="action-sub">+2 Mood</span></button>
     </div>
@@ -616,6 +621,20 @@ function needBar(label, value, kind) {
       <div class="need-label">${label}</div>
       <div class="need-bar"><div class="need-fill ${cls}" style="width:${pct}%"></div></div>
       <div class="need-val">${pct}</div>
+    </div>
+  `;
+}
+
+function renderSleepStatus(pet) {
+  const slept = Math.floor((Date.now() - pet.sleepingSince) / 1000);
+  const nextIn = g.secondsToNextEnergyPoint(pet);
+  return `
+    <div class="sleep-status">
+      <div class="sleep-z">💤</div>
+      <div class="sleep-info">
+        <div class="sleep-row"><span class="sleep-key">Sleeping for</span> <span class="sleep-clock">${formatDuration(slept)}</span></div>
+        <div class="sleep-row"><span class="sleep-key">Next +1 energy</span> <span class="sleep-clock">${formatDuration(nextIn)}</span></div>
+      </div>
     </div>
   `;
 }

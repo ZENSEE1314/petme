@@ -317,6 +317,52 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .action-btn.solo:active { transform: scale(0.96); }
 .action-sub { font-size: 11px; color: var(--text-soft); font-weight: 500; }
 .action-btn.solo:hover .action-sub { color: white; opacity: 0.9; }
+.action-btn.solo.sleeping {
+  background: linear-gradient(135deg, #c7d2fe, #a5b4fc);
+  color: #1e1b4b;
+  animation: sleep-glow 2s ease-in-out infinite;
+}
+@keyframes sleep-glow {
+  0%, 100% { box-shadow: 0 2px 8px rgba(165, 180, 252, 0.4); }
+  50%      { box-shadow: 0 4px 16px rgba(99, 102, 241, 0.5); }
+}
+
+/* Sleep status card */
+.sleep-status {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  margin-bottom: 12px;
+  background: linear-gradient(135deg, #e0e7ff, #c7d2fe);
+  border-radius: var(--radius);
+  border: 2px solid #a5b4fc;
+  box-shadow: var(--shadow);
+}
+.sleep-z {
+  font-size: 40px;
+  animation: zzz-float 2.2s ease-in-out infinite;
+}
+@keyframes zzz-float {
+  0%, 100% { transform: translateY(0) rotate(-4deg); }
+  50%      { transform: translateY(-4px) rotate(4deg); }
+}
+.sleep-info { flex: 1; }
+.sleep-row {
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 14px;
+  padding: 2px 0;
+}
+.sleep-key   { color: #3730a3; font-weight: 600; }
+.sleep-clock {
+  font-family: 'SF Mono', 'Consolas', monospace;
+  font-weight: 700;
+  color: #1e1b4b;
+  font-size: 15px;
+  background: rgba(255, 255, 255, 0.6);
+  padding: 2px 8px;
+  border-radius: 6px;
+}
 
 /* Mini collection on home */
 .mini-collection {

@@ -96,11 +96,66 @@ g.useItem(301);  // Pet Kibble +20 hunger
 ok(g.getActivePet().hunger > 50, 'feed raised hunger');
 g.useItem(401);  // Soap +50 cleanliness
 ok(g.getActivePet().cleanliness >= 100, 'soap maxed cleanliness');
-g.sleepPet();
-ok(g.getActivePet().energy > 50, 'sleep restored energy');
 g.playWithPet();
 g.petPet();
 ok(g.getActivePet().mood > 0, 'mood always positive');
+
+section('sleep toggle + timer');
+reset();
+g.newGame('Sleeper');
+g.claimStarter(1);
+const sleeper = g.getActivePet();
+sleeper.energy = 50;
+ok(!g.isSleeping(sleeper), 'awake by default');
+
+g.sleepPet();
+ok(g.isSleeping(g.getActivePet()), 'sleep toggled on');
+
+// Advance time 10 minutes — pet should gain ~1 energy
+g.state.lastTickAt = Date.now() - 10 * 60 * 1000;
+g.tickDecay();
+const afterTen = g.getActivePet().energy;
+ok(afterTen >= 50.9 && afterTen <= 51.2, `+1 energy after 10 min (got ${afterTen.toFixed(2)})`);
+
+// Advance another 60 minutes while still sleeping — should gain ~6 more
+g.state.lastTickAt = Date.now() - 60 * 60 * 1000;
+g.tickDecay();
+const afterHour = g.getActivePet().energy;
+ok(afterHour >= 56.9 && afterHour <= 57.5, `+6 energy after 1h sleep (got ${afterHour.toFixed(2)})`);
+
+// secondsToNextEnergyPoint should be < 600 (less than 10 min, since fraction > 0)
+const sleeperNow = g.getActivePet();
+const nextIn = g.secondsToNextEnergyPoint(sleeperNow);
+ok(nextIn >= 0 && nextIn <= 600, `next energy point within 10 min (got ${nextIn}s)`);
+
+// Wake up
+g.sleepPet();
+ok(!g.isSleeping(g.getActivePet()), 'wake up toggled off');
+
+// Now decay should resume
+g.state.lastTickAt = Date.now() - 30 * 60 * 1000;
+const energyBeforeDecay = g.getActivePet().energy;
+g.tickDecay();
+ok(g.getActivePet().energy < energyBeforeDecay, 'energy decays while awake');
+
+// Auto-wake at full energy
+g.sleepPet();
+g.getActivePet().energy = 99.5;
+g.state.lastTickAt = Date.now() - 10 * 60 * 1000;
+g.tickDecay();
+ok(g.getActivePet().energy === 100, 'energy capped at 100');
+ok(!g.isSleeping(g.getActivePet()), 'auto-wakes when full');
+
+section('new decay rates');
+reset();
+g.newGame('Decay');
+g.claimStarter(4);
+const dec = g.getActivePet();
+// Confirm rate constants align with "6h hunger / 12h clean / 4h energy" intent
+ok(Math.abs(g.CONFIG.hungerDecayPerMin     * 360 - 100) < 1, 'hunger ≈ 0 in 6 hours');
+ok(Math.abs(g.CONFIG.cleanlinessDecayPerMin * 720 - 100) < 1, 'cleanliness ≈ 0 in 12 hours');
+ok(Math.abs(g.CONFIG.energyDecayPerMin     * 240 - 100) < 1, 'energy ≈ 0 in 4 hours');
+ok(Math.abs(g.CONFIG.sleepEnergyGainPerMin * 10 - 1) < 0.001, 'sleep gains +1 per 10 min');
 
 section('decay over time');
 reset();

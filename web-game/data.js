@@ -177,10 +177,15 @@ const EVENTS = [
 
 // Constants used by gameplay
 const CONFIG = {
-  // Decay rates (per minute for prototype playability — 60x faster than GDD's per-hour)
-  hungerDecayPerMin:     1.0,
-  cleanlinessDecayPerMin:0.8,
-  energyDecayPerMin:     1.2,
+  // Decay rates per minute. Tuned to deplete 100 → 0 over real-world hours:
+  //   Hunger      6h  → 100 / 360 ≈ 0.278 /min
+  //   Cleanliness 12h → 100 / 720 ≈ 0.139 /min
+  //   Energy      4h  → 100 / 240 ≈ 0.417 /min
+  hungerDecayPerMin:      0.278,
+  cleanlinessDecayPerMin: 0.139,
+  energyDecayPerMin:      0.417,
+  // Sleep mechanic — pet enters sleep state, gains +1 energy every 10 real-time minutes.
+  sleepEnergyGainPerMin:  0.1,    // = +1 per 10 min
 
   // Currency caps
   coinsCap:   999999,
