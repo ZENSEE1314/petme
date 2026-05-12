@@ -11,13 +11,20 @@ namespace SmoothGiraffe.Core
     {
         public static GameManager Instance { get; private set; }
 
-        [Header("Backend")]
-        [SerializeField] private string supabaseUrl = "";       // set from Supabase project Settings → API
+        [Header("Backend (auto-loaded from Resources/Config.json if present)")]
+        [SerializeField] private string supabaseUrl = "";
         [SerializeField] private string supabaseAnonKey = "";
 
         public Net.ApiClient Api { get; private set; }
         public Net.AuthManager Auth { get; private set; }
         public TimeService Time { get; private set; }
+
+        [Serializable]
+        private class BackendConfig
+        {
+            public string supabaseUrl;
+            public string supabaseAnonKey;
+        }
 
         /// <summary>UUID of the currently logged-in user, or null if not signed in.</summary>
         public string CurrentUserId => Auth?.CurrentUserId;
@@ -35,9 +42,24 @@ namespace SmoothGiraffe.Core
             Instance = this;
             DontDestroyOnLoad(gameObject);
 
+            // Auto-load from Resources/Config.json if Inspector fields are empty
             if (string.IsNullOrEmpty(supabaseUrl) || string.IsNullOrEmpty(supabaseAnonKey))
             {
-                Debug.LogError("GameManager: supabaseUrl and supabaseAnonKey must be set in the Inspector.");
+                var configAsset = Resources.Load<TextAsset>("Config");
+                if (configAsset != null)
+                {
+                    var cfg = JsonUtility.FromJson<BackendConfig>(configAsset.text);
+                    if (!string.IsNullOrEmpty(cfg?.supabaseUrl)) supabaseUrl = cfg.supabaseUrl;
+                    if (!string.IsNullOrEmpty(cfg?.supabaseAnonKey)) supabaseAnonKey = cfg.supabaseAnonKey;
+                }
+            }
+
+            if (string.IsNullOrEmpty(supabaseUrl) || string.IsNullOrEmpty(supabaseAnonKey))
+            {
+                Debug.LogError(
+                    "GameManager: backend config missing. " +
+                    "Run scripts/setup.ps1, or set values in the Inspector, " +
+                    "or place Config.json in client/Assets/Resources/.");
                 return;
             }
 

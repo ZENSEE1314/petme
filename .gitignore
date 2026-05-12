@@ -69,6 +69,10 @@ server/node_modules/
 *.keystore
 secrets/
 
+# Unity backend config (contains anon key + cron secret)
+client/Assets/Resources/Config.json
+client/Assets/Resources/Config.json.meta
+
 # ============================================================
 # Node / npm / pnpm
 # ============================================================

@@ -7,6 +7,8 @@ A 3D chibi virtual pet collection game — Digimon/Pokémon vibe, cross-platform
 
 **v1.0 launch scope**: 30 pets across 6 rarity tiers, 4 currencies, direct + async trading, monthly events, async PvP. Timeline: ~7.5 months solo.
 
+🚀 **First time here?** → [`GETTING_STARTED.md`](GETTING_STARTED.md) — one-shot setup script ships you a live backend in ~5 minutes.
+
 ---
 
 ## What's in this repo right now

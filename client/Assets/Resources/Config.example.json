@@ -1,0 +1,7 @@
+{
+  "_comment": "Copy this file to Config.json and fill in real values. Config.json is gitignored.",
+  "_comment_2": "setup.ps1 generates Config.json automatically — only fill in by hand if you skip the script.",
+  "supabaseUrl": "https://YOUR-PROJECT-REF.supabase.co",
+  "supabaseAnonKey": "eyJ...your anon key here...",
+  "cronSecret": "32-char random string from setup.ps1"
+}
