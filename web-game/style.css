@@ -947,6 +947,112 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 }
 
 /* ============================================================
+   Admin
+   ============================================================ */
+
+.hdr-admin-btn {
+  background: none;
+  border: none;
+  font-size: 18px;
+  cursor: pointer;
+  padding: 0 4px;
+  margin-left: 4px;
+  transition: transform 0.2s;
+}
+.hdr-admin-btn:hover { transform: rotate(60deg) scale(1.2); }
+
+.admin-tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+.admin-tab {
+  flex: 1;
+  background: var(--card);
+  border: 2px solid #eee;
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  font-weight: 700;
+  font-size: 14px;
+  text-transform: capitalize;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.admin-tab.active {
+  background: var(--primary);
+  color: white;
+  border-color: var(--primary);
+}
+
+.admin-table-wrap {
+  background: var(--card);
+  border-radius: var(--radius);
+  padding: 4px;
+  box-shadow: var(--shadow);
+  margin-bottom: 16px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.admin-table thead {
+  background: var(--bg-soft);
+  position: sticky; top: 0;
+  z-index: 1;
+}
+.admin-table th, .admin-table td {
+  padding: 6px 8px;
+  text-align: left;
+  vertical-align: middle;
+  border-bottom: 1px solid #f0e8f6;
+}
+.admin-table th {
+  font-weight: 700;
+  color: var(--text-soft);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+.admin-input {
+  width: 100%;
+  min-width: 60px;
+  padding: 4px 6px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 13px;
+  font-family: inherit;
+  background: white;
+  transition: border-color 0.15s, background-color 0.4s;
+}
+.admin-input:focus {
+  border-color: var(--primary);
+  outline: none;
+}
+.admin-input.small { max-width: 50px; text-align: center; }
+.admin-input.num   { max-width: 80px; }
+.admin-cell-pretty {
+  font-family: 'SF Mono', 'Consolas', monospace;
+  font-size: 12px;
+  color: var(--primary);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.admin-bottom-bar {
+  margin-top: 8px;
+}
+
+@media (max-width: 480px) {
+  .admin-table { font-size: 11px; }
+  .admin-table th, .admin-table td { padding: 4px; }
+}
+
+/* ============================================================
    Mobile bumps
    ============================================================ */
 

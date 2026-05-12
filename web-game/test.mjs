@@ -340,6 +340,50 @@ const finalR = g.claimEventFinalReward();
 ok(finalR.mythicEgg === true, 'got mythic egg reward');
 ok(g.state.eggs.some(e => g.EGG_BY_ID[e.eggTypeId].tier === 'mythic'), 'mythic egg in inventory');
 
+section('admin overrides');
+reset();
+g.newGame('Admin');
+
+// Capture original values before override
+const originalEmberletAtk = g.species(1).baseStats.atk;
+const originalCarrotPrice = g.ITEM_BY_ID[101].priceCoins;
+const originalCarrotGrow  = g.ITEM_BY_ID[101].effect.grow_seconds;
+const originalCommonEggPrice = g.EGG_BY_ID[1].priceCoins;
+
+// Override pet stats
+g.setAdminOverride('species', 1, { atk: 999, name: 'Mega Ember' });
+ok(g.species(1).baseStats.atk === 999, 'pet atk overridden');
+ok(g.species(1).name === 'Mega Ember',  'pet name overridden');
+
+// Override seed price + grow time
+g.setAdminOverride('items', 101, { priceCoins: 1, growSeconds: 5 });
+ok(g.ITEM_BY_ID[101].priceCoins === 1, 'seed price overridden');
+ok(g.ITEM_BY_ID[101].effect.grow_seconds === 5, 'seed grow seconds overridden');
+
+// Override egg price
+g.setAdminOverride('eggs', 1, { priceCoins: 1 });
+ok(g.EGG_BY_ID[1].priceCoins === 1, 'egg price overridden');
+
+// Overrides survive save/load
+const dumpedState = JSON.parse(JSON.stringify(g.state));
+ok(dumpedState.adminOverrides.species['1'].atk === 999, 'overrides serialized');
+
+// Reset
+g.resetAdminOverrides();
+ok(g.species(1).baseStats.atk  === originalEmberletAtk,  `reset restores pet atk (${originalEmberletAtk})`);
+ok(g.species(1).name === 'Emberlet', 'reset restores pet name');
+ok(g.ITEM_BY_ID[101].priceCoins === originalCarrotPrice, 'reset restores seed price');
+ok(g.ITEM_BY_ID[101].effect.grow_seconds === originalCarrotGrow, 'reset restores seed grow time');
+ok(g.EGG_BY_ID[1].priceCoins === originalCommonEggPrice, 'reset restores egg price');
+ok(Object.keys(g.state.adminOverrides.species).length === 0, 'overrides cleared');
+
+// Overrides apply at boot
+g.setAdminOverride('species', 1, { atk: 500 });
+// Force-save then reload state
+g.saveState();
+const reloadedState = g.loadState();
+ok(reloadedState.adminOverrides.species['1'].atk === 500, 'overrides persist in localStorage');
+
 // ============================================================
 console.log('\n--------');
 console.log(`${pass} passed, ${fail} failed`);

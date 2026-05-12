@@ -11,6 +11,15 @@ const SPECIES_BY_ID = Object.fromEntries(SPECIES.map(s => [s.id, s]));
 const EGG_BY_ID = Object.fromEntries(EGG_TYPES.map(e => [e.id, e]));
 const ITEM_BY_ID = Object.fromEntries(ITEMS.map(i => [i.id, i]));
 
+// Frozen defaults — captured at module load. Used by resetAdminOverrides()
+// to restore SPECIES/ITEMS/EGG_TYPES in-place (the *_BY_ID maps keep
+// pointing at the same objects, so they update automatically).
+const DEFAULTS = {
+  species: JSON.parse(JSON.stringify(SPECIES)),
+  items:   JSON.parse(JSON.stringify(ITEMS)),
+  eggs:    JSON.parse(JSON.stringify(EGG_TYPES)),
+};
+
 // ------------------------------------------------------------
 // State
 // ------------------------------------------------------------
@@ -64,6 +73,8 @@ function defaultState() {
     // Events
     eventProgress: {},   // { [eventId]: { [questId]: count, claimed: bool } }
     eventStats: { spendCoins: 0 },  // session-wide stat trackers for event quests
+    // Admin overrides — { species: {[id]: {...patch}}, items: {...}, eggs: {...} }
+    adminOverrides: { species: {}, items: {}, eggs: {} },
   };
 }
 
@@ -786,6 +797,89 @@ function claimEventFinalReward() {
 }
 
 // ------------------------------------------------------------
+// Admin overrides — edit any catalog value at runtime.
+// ------------------------------------------------------------
+
+/**
+ * Apply currently-stored overrides to the live SPECIES / ITEMS / EGG_TYPES
+ * arrays. The *_BY_ID maps update automatically because they share object
+ * references with the arrays.
+ */
+function applyAdminOverrides() {
+  const ov = state.adminOverrides || { species: {}, items: {}, eggs: {} };
+
+  for (const [idStr, patch] of Object.entries(ov.species || {})) {
+    const sp = SPECIES.find(s => s.id === Number(idStr));
+    if (!sp) continue;
+    if (patch.name)  sp.name  = patch.name;
+    if (patch.emoji) sp.emoji = patch.emoji;
+    if (patch.rarity && RARITY[patch.rarity]) sp.rarity = patch.rarity;
+    sp.baseStats = sp.baseStats || {};
+    for (const k of ['hp','atk','def','spd','intl']) {
+      if (patch[k] !== undefined && patch[k] !== '') sp.baseStats[k] = Number(patch[k]);
+    }
+  }
+
+  for (const [idStr, patch] of Object.entries(ov.items || {})) {
+    const it = ITEMS.find(i => i.id === Number(idStr));
+    if (!it) continue;
+    if (patch.name)  it.name  = patch.name;
+    if (patch.emoji) it.emoji = patch.emoji;
+    for (const k of ['priceCoins','priceGems','priceStardust']) {
+      if (patch[k] !== undefined) it[k] = patch[k] === '' || patch[k] === null ? null : Number(patch[k]);
+    }
+    if (it.effect && patch.growSeconds !== undefined && patch.growSeconds !== '') {
+      it.effect.grow_seconds = Number(patch.growSeconds);
+    }
+  }
+
+  for (const [idStr, patch] of Object.entries(ov.eggs || {})) {
+    const e = EGG_TYPES.find(x => x.id === Number(idStr));
+    if (!e) continue;
+    if (patch.name)  e.name = patch.name;
+    if (patch.emoji) e.emoji = patch.emoji;
+    for (const k of ['priceCoins','priceGems','priceStardust']) {
+      if (patch[k] !== undefined) e[k] = patch[k] === '' || patch[k] === null ? null : Number(patch[k]);
+    }
+    if (patch.hatchSeconds !== undefined && patch.hatchSeconds !== '') {
+      e.hatchSeconds = Number(patch.hatchSeconds);
+    }
+  }
+}
+
+/** Patch a single record. Persists to state.adminOverrides and re-applies. */
+function setAdminOverride(category, id, patch) {
+  if (!['species','items','eggs'].includes(category)) throw new Error('bad category');
+  state.adminOverrides ??= { species: {}, items: {}, eggs: {} };
+  state.adminOverrides[category][id] ??= {};
+  Object.assign(state.adminOverrides[category][id], patch);
+  applyAdminOverrides();
+  saveState();
+}
+
+/** Restore everything to data.js defaults, discard overrides. */
+function resetAdminOverrides() {
+  // Reset live arrays in-place so existing *_BY_ID maps stay valid
+  for (let i = 0; i < SPECIES.length; i++) {
+    const fresh = JSON.parse(JSON.stringify(DEFAULTS.species[i]));
+    Object.keys(SPECIES[i]).forEach(k => delete SPECIES[i][k]);
+    Object.assign(SPECIES[i], fresh);
+  }
+  for (let i = 0; i < ITEMS.length; i++) {
+    const fresh = JSON.parse(JSON.stringify(DEFAULTS.items[i]));
+    Object.keys(ITEMS[i]).forEach(k => delete ITEMS[i][k]);
+    Object.assign(ITEMS[i], fresh);
+  }
+  for (let i = 0; i < EGG_TYPES.length; i++) {
+    const fresh = JSON.parse(JSON.stringify(DEFAULTS.eggs[i]));
+    Object.keys(EGG_TYPES[i]).forEach(k => delete EGG_TYPES[i][k]);
+    Object.assign(EGG_TYPES[i], fresh);
+  }
+  state.adminOverrides = { species: {}, items: {}, eggs: {} };
+  saveState();
+}
+
+// ------------------------------------------------------------
 // Bootstrap (called from index.html)
 // ------------------------------------------------------------
 
@@ -805,7 +899,9 @@ function bootGame() {
     if (!state.trainCooldowns) state.trainCooldowns = { atk: 0, def: 0, spd: 0, intl: 0 };
     if (!state.eventProgress) state.eventProgress = {};
     if (!state.eventStats) state.eventStats = { spendCoins: 0 };
+    if (!state.adminOverrides) state.adminOverrides = { species: {}, items: {}, eggs: {} };
     state.schemaVersion = 2;
+    applyAdminOverrides();
     tickDecay();
   }
   return state !== null;
@@ -831,6 +927,8 @@ window.game = {
   startTraining, finishTraining,
   // events
   getActiveEvent, eventProgress, claimEventQuest, claimEventFinalReward,
+  // admin
+  applyAdminOverrides, setAdminOverride, resetAdminOverrides,
   // tick
   tickDecay,
 };

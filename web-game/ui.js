@@ -26,13 +26,12 @@ window.addEventListener('DOMContentLoaded', () => {
     btn.addEventListener('click', () => switchScreen(btn.dataset.screen));
   });
 
-  // Tick loop — decay + render every 2 seconds
+  // Tick loop — 1s on screens with live countdowns, 2s otherwise.
   setInterval(() => {
-    if (g.state) {
-      g.tickDecay();
-      renderActiveScreen();
-    }
-  }, 2000);
+    if (!g.state) return;
+    g.tickDecay();
+    renderActiveScreen();
+  }, 1000);
 
   // Wire sign-up form (might not exist on first render but listener is safe)
   document.getElementById('sign-up-btn')?.addEventListener('click', handleSignUp);
@@ -95,6 +94,7 @@ function renderActiveScreen() {
     case 'shop':      renderShop();      break;
     case 'eggs':      renderEggs();      break;
     case 'battle':    renderBattle();    break;
+    case 'admin':     renderAdmin();     break;
   }
 }
 
@@ -105,6 +105,11 @@ function renderActiveScreen() {
 function renderHeader() {
   const p = g.state.player;
   document.getElementById('hdr-name').textContent = p.name;
+  const adminBtn = document.getElementById('hdr-admin');
+  if (adminBtn && !adminBtn._wired) {
+    adminBtn._wired = true;
+    adminBtn.addEventListener('click', () => switchScreen('admin'));
+  }
   document.getElementById('hdr-coins').textContent    = formatNum(p.coins);
   document.getElementById('hdr-gems').textContent     = formatNum(p.gems);
   document.getElementById('hdr-stardust').textContent = formatNum(p.stardust);
@@ -374,11 +379,18 @@ function renderPlot(plot) {
   `;
 }
 
-function formatGrow(sec) {
-  if (sec >= 3600) return Math.ceil(sec/3600) + 'h';
-  if (sec >= 60) return Math.ceil(sec/60) + 'm';
-  return Math.ceil(sec) + 's';
+/** DD:HH:MM:SS clock format. Always 4 fields, 2 digits each. */
+function formatDuration(sec) {
+  sec = Math.max(0, Math.ceil(sec));
+  const d = Math.floor(sec / 86400);
+  const h = Math.floor((sec % 86400) / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  const p = n => String(n).padStart(2, '0');
+  return `${p(d)}:${p(h)}:${p(m)}:${p(s)}`;
 }
+// alias kept for any old callers
+const formatGrow = formatDuration;
 
 function showPlantPicker(plotIdx, seeds) {
   const modal = document.createElement('div');
@@ -922,6 +934,177 @@ function animateBattle(result) {
     setTimeout(showNext, 400);
   };
   showNext();
+}
+
+// ------------------------------------------------------------
+// Admin
+// ------------------------------------------------------------
+
+let adminTab = 'pets';
+
+function renderAdmin() {
+  const root = document.getElementById('screen-admin');
+  root.innerHTML = `
+    <button class="back-btn" data-go="home">← Home</button>
+    <h2 class="screen-title">⚙️ Admin Panel</h2>
+    <p class="screen-sub">Edit any catalog value live. Changes persist in your save and apply immediately.</p>
+
+    <div class="admin-tabs">
+      ${['pets','seeds','items','eggs'].map(t => `
+        <button class="admin-tab ${adminTab === t ? 'active' : ''}" data-admin-tab="${t}">${tabIcon(t)} ${t}</button>
+      `).join('')}
+    </div>
+
+    <div class="admin-table-wrap">
+      ${adminTab === 'pets'  ? renderAdminPets()  : ''}
+      ${adminTab === 'seeds' ? renderAdminSeeds() : ''}
+      ${adminTab === 'items' ? renderAdminItems() : ''}
+      ${adminTab === 'eggs'  ? renderAdminEggs()  : ''}
+    </div>
+
+    <div class="admin-bottom-bar">
+      <button id="admin-reset" class="danger-btn">↺ Reset ALL overrides to defaults</button>
+    </div>
+  `;
+
+  // Tab switching
+  root.querySelectorAll('.admin-tab').forEach(b => {
+    b.addEventListener('click', () => {
+      adminTab = b.dataset.adminTab;
+      renderAdmin();
+    });
+  });
+
+  // Cell editing — change event triggers override save
+  root.querySelectorAll('.admin-input').forEach(inp => {
+    inp.addEventListener('change', () => {
+      const { category, id, field } = inp.dataset;
+      try {
+        g.setAdminOverride(category, id, { [field]: inp.value });
+        flashCell(inp);
+        // Live-refresh adjacent DD:HH:MM:SS preview if user edited a timer field
+        if (field === 'growSeconds' || field === 'hatchSeconds') {
+          const pretty = inp.closest('tr')?.querySelector('.admin-cell-pretty');
+          if (pretty) pretty.textContent = formatDuration(Number(inp.value));
+        }
+      } catch (e) { alert(e.message); }
+    });
+  });
+
+  document.getElementById('admin-reset').addEventListener('click', () => {
+    if (!confirm('Reset all admin overrides? All pets/seeds/items/eggs return to defaults. Save data is kept.')) return;
+    g.resetAdminOverrides();
+    showToast('Reset to defaults');
+    renderAdmin();
+  });
+
+  root.querySelectorAll('[data-go]').forEach(b => b.addEventListener('click', () => switchScreen(b.dataset.go)));
+}
+
+function tabIcon(t) {
+  return { pets: '🦒', seeds: '🌱', items: '🛍️', eggs: '🥚' }[t] || '⚙️';
+}
+
+function flashCell(inp) {
+  inp.style.transition = 'background-color 0.4s';
+  inp.style.backgroundColor = '#bbf7d0';
+  setTimeout(() => inp.style.backgroundColor = '', 600);
+}
+
+function renderAdminPets() {
+  const rows = g.SPECIES.map(s => {
+    const rar = g.RARITY[s.rarity];
+    return `
+      <tr style="border-left:4px solid ${rar.color}">
+        <td>${s.id}</td>
+        <td><input class="admin-input small" data-category="species" data-id="${s.id}" data-field="emoji" value="${s.emoji}"></td>
+        <td><input class="admin-input" data-category="species" data-id="${s.id}" data-field="name" value="${s.name}"></td>
+        <td>
+          <select class="admin-input" data-category="species" data-id="${s.id}" data-field="rarity">
+            ${Object.keys(g.RARITY).map(r => `<option value="${r}" ${s.rarity===r?'selected':''}>${r}</option>`).join('')}
+          </select>
+        </td>
+        <td><input class="admin-input num" type="number" data-category="species" data-id="${s.id}" data-field="hp"   value="${s.baseStats.hp}"></td>
+        <td><input class="admin-input num" type="number" data-category="species" data-id="${s.id}" data-field="atk"  value="${s.baseStats.atk}"></td>
+        <td><input class="admin-input num" type="number" data-category="species" data-id="${s.id}" data-field="def"  value="${s.baseStats.def}"></td>
+        <td><input class="admin-input num" type="number" data-category="species" data-id="${s.id}" data-field="spd"  value="${s.baseStats.spd}"></td>
+        <td><input class="admin-input num" type="number" data-category="species" data-id="${s.id}" data-field="intl" value="${s.baseStats.intl}"></td>
+      </tr>
+    `;
+  }).join('');
+  return `
+    <table class="admin-table">
+      <thead><tr><th>#</th><th>Emoji</th><th>Name</th><th>Rarity</th><th>HP</th><th>ATK</th><th>DEF</th><th>SPD</th><th>INT</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+}
+
+function renderAdminSeeds() {
+  const seeds = g.ITEMS.filter(i => i.type === 'seed');
+  const rows = seeds.map(it => `
+    <tr>
+      <td>${it.id}</td>
+      <td><input class="admin-input small" data-category="items" data-id="${it.id}" data-field="emoji" value="${it.emoji}"></td>
+      <td><input class="admin-input" data-category="items" data-id="${it.id}" data-field="name" value="${it.name}"></td>
+      <td><input class="admin-input num" type="number" data-category="items" data-id="${it.id}" data-field="growSeconds" value="${it.effect.grow_seconds}"></td>
+      <td class="admin-cell-pretty">${formatDuration(it.effect.grow_seconds)}</td>
+      <td><input class="admin-input num" type="number" data-category="items" data-id="${it.id}" data-field="priceCoins" value="${it.priceCoins ?? ''}"></td>
+      <td><input class="admin-input num" type="number" data-category="items" data-id="${it.id}" data-field="priceGems"  value="${it.priceGems  ?? ''}"></td>
+    </tr>
+  `).join('');
+  return `
+    <table class="admin-table">
+      <thead><tr><th>#</th><th>Emoji</th><th>Name</th><th>Grow (sec)</th><th>DD:HH:MM:SS</th><th>Price 🪙</th><th>Price 💎</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+}
+
+function renderAdminItems() {
+  const items = g.ITEMS.filter(i => i.type !== 'seed' && i.type !== 'crop');
+  const rows = items.map(it => `
+    <tr>
+      <td>${it.id}</td>
+      <td><input class="admin-input small" data-category="items" data-id="${it.id}" data-field="emoji" value="${it.emoji}"></td>
+      <td><input class="admin-input" data-category="items" data-id="${it.id}" data-field="name" value="${it.name}"></td>
+      <td><span class="muted small">${it.type}</span></td>
+      <td><input class="admin-input num" type="number" data-category="items" data-id="${it.id}" data-field="priceCoins"    value="${it.priceCoins    ?? ''}" placeholder="-"></td>
+      <td><input class="admin-input num" type="number" data-category="items" data-id="${it.id}" data-field="priceGems"     value="${it.priceGems     ?? ''}" placeholder="-"></td>
+      <td><input class="admin-input num" type="number" data-category="items" data-id="${it.id}" data-field="priceStardust" value="${it.priceStardust ?? ''}" placeholder="-"></td>
+    </tr>
+  `).join('');
+  return `
+    <table class="admin-table">
+      <thead><tr><th>#</th><th>Emoji</th><th>Name</th><th>Type</th><th>Price 🪙</th><th>Price 💎</th><th>Price ✨</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+}
+
+function renderAdminEggs() {
+  const rows = g.EGG_TYPES.map(e => {
+    const rar = g.RARITY[e.tier];
+    return `
+      <tr style="border-left:4px solid ${rar.color}">
+        <td>${e.id}</td>
+        <td><input class="admin-input small" data-category="eggs" data-id="${e.id}" data-field="emoji" value="${e.emoji}"></td>
+        <td><input class="admin-input" data-category="eggs" data-id="${e.id}" data-field="name" value="${e.name}"></td>
+        <td>${e.tier}</td>
+        <td><input class="admin-input num" type="number" data-category="eggs" data-id="${e.id}" data-field="hatchSeconds" value="${e.hatchSeconds}"></td>
+        <td class="admin-cell-pretty">${formatDuration(e.hatchSeconds)}</td>
+        <td><input class="admin-input num" type="number" data-category="eggs" data-id="${e.id}" data-field="priceCoins"    value="${e.priceCoins    ?? ''}" placeholder="-"></td>
+        <td><input class="admin-input num" type="number" data-category="eggs" data-id="${e.id}" data-field="priceGems"     value="${e.priceGems     ?? ''}" placeholder="-"></td>
+        <td><input class="admin-input num" type="number" data-category="eggs" data-id="${e.id}" data-field="priceStardust" value="${e.priceStardust ?? ''}" placeholder="-"></td>
+      </tr>
+    `;
+  }).join('');
+  return `
+    <table class="admin-table">
+      <thead><tr><th>#</th><th>Emoji</th><th>Name</th><th>Tier</th><th>Hatch (sec)</th><th>DD:HH:MM:SS</th><th>Price 🪙</th><th>Price 💎</th><th>Price ✨</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
 }
 
 // ------------------------------------------------------------
