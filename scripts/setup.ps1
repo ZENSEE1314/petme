@@ -121,7 +121,7 @@ Write-Ok "Schema deployed"
 # 6. Deploy edge functions
 # ============================================================
 Write-Step "Deploying edge functions"
-$functions = @("tick-needs", "buy-egg", "hatch-egg", "farm-claim", "battle-simulate", "trade-execute")
+$functions = @("tick-needs", "buy-egg", "hatch-egg", "farm-claim", "battle-simulate", "trade-execute", "claim-starter")
 foreach ($fn in $functions) {
   Write-Host "  Deploying $fn..."
   $extraArgs = @()

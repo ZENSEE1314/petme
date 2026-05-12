@@ -2,6 +2,7 @@ using System;
 using System.Net.Http;
 using System.Text;
 using System.Threading.Tasks;
+using Newtonsoft.Json;
 using UnityEngine;
 
 namespace SmoothGiraffe.Net
@@ -54,22 +55,23 @@ namespace SmoothGiraffe.Net
 
         public async Task SignInAnonymouslyAsync()
         {
+            // Supabase anonymous sign-in (Project Settings → Auth → enable Anonymous sign-ins)
             var url = $"{_api.BaseUrl}/auth/v1/signup";
-            var payload = "{\"email\":null}"; // Supabase anonymous sign-in
-            await PostAuthAsync(url, payload);
+            await PostAuthAsync(url, JsonConvert.SerializeObject(new { }));
         }
 
         public async Task SignInWithEmailAsync(string email, string password)
         {
             var url = $"{_api.BaseUrl}/auth/v1/token?grant_type=password";
-            var payload = $"{{\"email\":\"{email}\",\"password\":\"{password}\"}}";
-            await PostAuthAsync(url, payload);
+            await PostAuthAsync(url, JsonConvert.SerializeObject(new { email, password }));
         }
 
         public async Task SignUpWithEmailAsync(string email, string password, string displayName)
         {
             var url = $"{_api.BaseUrl}/auth/v1/signup";
-            var payload = $"{{\"email\":\"{email}\",\"password\":\"{password}\",\"data\":{{\"display_name\":\"{displayName}\"}}}}";
+            var payload = string.IsNullOrEmpty(displayName)
+                ? JsonConvert.SerializeObject(new { email, password })
+                : JsonConvert.SerializeObject(new { email, password, data = new { display_name = displayName } });
             await PostAuthAsync(url, payload);
         }
 
@@ -104,8 +106,8 @@ namespace SmoothGiraffe.Net
             if (!resp.IsSuccessStatusCode)
                 throw new ApiException(resp.StatusCode, body);
 
-            var session = JsonUtility.FromJson<AuthSession>(body);
-            if (string.IsNullOrEmpty(session.access_token))
+            var session = JsonConvert.DeserializeObject<AuthSession>(body);
+            if (string.IsNullOrEmpty(session?.access_token))
                 throw new InvalidOperationException("auth response missing access_token");
 
             PlayerPrefs.SetString(ACCESS_TOKEN_PREF, session.access_token);
@@ -118,7 +120,6 @@ namespace SmoothGiraffe.Net
             OnSignedIn?.Invoke(CurrentUserId);
         }
 
-        [Serializable]
         private class AuthSession
         {
             public string access_token;
@@ -126,7 +127,6 @@ namespace SmoothGiraffe.Net
             public AuthUser user;
         }
 
-        [Serializable]
         private class AuthUser
         {
             public string id;

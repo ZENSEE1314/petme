@@ -96,21 +96,40 @@ ALL CHECKS PASSED ✓
 
 ---
 
-## Step 4 — Open the Unity client
+## Step 4 — Open the Unity client and run Boot scene
 
 1. Open **Unity Hub** → Add → select `client/` folder in this repo
-2. Open in **Unity 2022.3 LTS**
-3. First import takes ~5 minutes (Library/ generates)
-4. The `Config.json` file you generated in Step 1 is already in `client/Assets/Resources/`, so the `GameManager` will auto-load it at runtime
+2. Open in **Unity 2022.3 LTS** (first import takes ~5 minutes — Library/ generates)
+3. Install **Newtonsoft.Json**:
+   - **Window → Package Manager → `+` → Add package by name…**
+   - Name: `com.unity.nuget.newtonsoft-json`
+   - Hit Add
+4. Wait for Unity to recompile (~30 seconds)
+5. **Smooth Giraffe → Create Boot Scene** in the menu bar
+   - This script builds the entire scene programmatically: camera, light, floor,
+     placeholder cube, UI canvas with sign-in panel and starter picker, all
+     wired up to `BootController`. No manual dragging needed.
+6. Press **▶ Play**
 
-### Phase 0 acceptance test
+### What you should see
 
-There's no scene yet — you'll build the **Boot scene** as your first Phase 0 task. The acceptance criteria are:
+- Lavender background with a wood-tone floor
+- "Booting…" top-center, then "Sign in to start."
+- Form with **Email** / **Password** / **Display Name** fields and three buttons
+- Sign up with any email/password → balances appear → starter picker shows up
+- Pick 🔥 / 💧 / 🌿 → a pink cube appears, bobbing gently — your first pet!
+- Balances: 🪙 50 🎟️ 1 (signup bonus from `claim-starter`)
 
-- [ ] `GameManager` initializes `Api`, `Auth`, `Time` without errors
-- [ ] Anonymous sign-up creates a row in the `users` table (check in Supabase Studio → Table Editor → `users`)
-- [ ] Querying `monster_species` returns 30 rows (proves PostgREST + RLS work)
-- [ ] A 3D placeholder cube appears in the scene as the pet stand-in
+### Phase 0 acceptance test ✅
+
+- [ ] No errors in the Console
+- [ ] Sign-up creates a row in `users` table (verify in Supabase Studio)
+- [ ] After picking a starter, a row appears in the `monsters` table with `is_starter = true`
+- [ ] Cube is visible and animating
+- [ ] Balances reflect the +50 coin +1 ticket signup bonus
+- [ ] `currency_ledger` has 2 rows for that user with `reason = 'signup_bonus'`
+
+When all six pass, **Phase 0 is shipped.** Move on to Phase 1 (the care loop — feed, clean, play, sleep).
 
 ---
 

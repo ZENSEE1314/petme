@@ -81,7 +81,7 @@ if (-not (Test-Endpoint "egg_types      (4+ expected)"   "egg_types?select=id"  
 
 Write-Host ""
 Write-Host "Edge functions reachable:" -ForegroundColor White
-$fns = @("tick-needs", "buy-egg", "hatch-egg", "farm-claim", "battle-simulate", "trade-execute")
+$fns = @("tick-needs", "buy-egg", "hatch-egg", "farm-claim", "battle-simulate", "trade-execute", "claim-starter")
 foreach ($fn in $fns) { if (-not (Test-Function $fn)) { $failed++ } }
 
 Write-Host ""
