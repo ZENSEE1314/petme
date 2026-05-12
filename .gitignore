@@ -1,0 +1,113 @@
+# ============================================================
+# Unity
+# ============================================================
+client/Library/
+client/Temp/
+client/Obj/
+client/Build/
+client/Builds/
+client/Logs/
+client/UserSettings/
+client/MemoryCaptures/
+client/Recordings/
+client/[Ll]ibrary/
+client/[Tt]emp/
+client/[Oo]bj/
+client/[Bb]uild/
+client/[Bb]uilds/
+client/[Ll]ogs/
+client/[Uu]ser[Ss]ettings/
+
+# Visual Studio / Rider / VSCode cache
+client/.vs/
+client/.vscode/
+client/.idea/
+client/*.csproj
+client/*.unityproj
+client/*.sln
+client/*.suo
+client/*.tmp
+client/*.user
+client/*.userprefs
+client/*.pidb
+client/*.booproj
+client/*.svd
+client/*.pdb
+client/*.mdb
+client/*.opendb
+client/*.VC.db
+
+# Unity Asset Server / Collab
+client/sysinfo.txt
+client/*.apk
+client/*.aab
+client/*.unitypackage
+client/*.app
+
+# Crashlytics
+client/crashlytics-build.properties
+
+# ============================================================
+# Supabase / Backend
+# ============================================================
+server/supabase/.branches/
+server/supabase/.temp/
+server/.env
+server/.env.local
+server/.env.*.local
+server/node_modules/
+
+# ============================================================
+# Secrets
+# ============================================================
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+*.p12
+*.keystore
+secrets/
+
+# ============================================================
+# Node / npm / pnpm
+# ============================================================
+node_modules/
+dist/
+.npm/
+.pnpm-store/
+
+# ============================================================
+# OS
+# ============================================================
+.DS_Store
+Thumbs.db
+desktop.ini
+ehthumbs.db
+$RECYCLE.BIN/
+
+# ============================================================
+# Editor swap / backup files
+# ============================================================
+*.swp
+*.swo
+*~
+.*.swp
+.*.swo
+
+# ============================================================
+# Nano Banana / image gen output (large, regenerable)
+# ============================================================
+nanobanana-output/
+**/nanobanana-output/
+
+# Keep design concepts (final picks) but ignore raw drafts
+design/concepts/**/_rejects/
+design/concepts/**/_drafts/
+
+# ============================================================
+# Misc
+# ============================================================
+*.log
+*.bak
+*.tmp
