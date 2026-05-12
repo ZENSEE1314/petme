@@ -9,6 +9,8 @@ A 3D chibi virtual pet collection game — Digimon/Pokémon vibe, cross-platform
 
 🚀 **First time here?** → [`GETTING_STARTED.md`](GETTING_STARTED.md) — one-shot setup script ships you a live backend in ~5 minutes.
 
+🎮 **Want to PLAY right now?** A complete browser prototype lives at **`web-game/`**. Once GitHub Pages is enabled it's live at https://zensee1314.github.io/petme/ — no install, no backend, all systems working. See [`web-game/README.md`](web-game/README.md).
+
 ---
 
 ## What's in this repo right now

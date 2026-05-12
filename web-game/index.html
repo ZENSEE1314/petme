@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Smooth Giraffe — chibi pet collector</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#fef6f0">
+  <meta name="description" content="A 3D chibi virtual pet collection game — care, farm, gacha, trade, battle.">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='80' font-size='80'%3E🦒%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- Sign-up screen -->
+  <div id="sign-up-screen">
+    <div class="sign-up-emoji">🦒</div>
+    <h1>Smooth Giraffe</h1>
+    <p class="tagline">Hatch · Raise · Battle · Collect</p>
+    <div class="form-card">
+      <p style="margin: 0 0 12px; font-weight: 700;">What should we call you?</p>
+      <input id="display-name-input" type="text" placeholder="Trainer name" maxlength="20" autocomplete="off">
+      <button id="sign-up-btn">Start playing →</button>
+    </div>
+    <p class="muted small" style="margin-top: 24px; max-width: 320px;">
+      Browser prototype — saves to this device only.
+      All systems from the master plan are here: care loop, 30-pet dex,
+      egg gacha with pity, 4 currencies, async battle.
+    </p>
+  </div>
+
+  <!-- Main app -->
+  <div id="app">
+    <header class="app-header">
+      <div class="hdr-row">
+        <span class="name">🦒 <span id="hdr-name"></span></span>
+        <span class="stat">🪙 <span id="hdr-coins">0</span></span>
+        <span class="stat">💎 <span id="hdr-gems">0</span></span>
+      </div>
+      <div class="hdr-row" style="margin-top: 6px;">
+        <span class="stat">✨ <span id="hdr-stardust">0</span></span>
+        <span class="stat">🎟️ <span id="hdr-tickets">0</span></span>
+        <span class="stat">🏆 <span id="hdr-trophies">0</span></span>
+        <span class="stat">🧩 <span id="hdr-fragments">0</span></span>
+      </div>
+    </header>
+
+    <main class="app-main">
+      <section id="screen-starter"    class="screen"></section>
+      <section id="screen-home"       class="screen active"></section>
+      <section id="screen-collection" class="screen"></section>
+      <section id="screen-shop"       class="screen"></section>
+      <section id="screen-eggs"       class="screen"></section>
+      <section id="screen-battle"     class="screen"></section>
+    </main>
+
+    <nav class="bottom-nav">
+      <button class="nav-tab active" data-screen="home">
+        <span class="nav-emoji">🏠</span><span>Home</span>
+      </button>
+      <button class="nav-tab" data-screen="collection">
+        <span class="nav-emoji">📦</span><span>Dex</span>
+      </button>
+      <button class="nav-tab" data-screen="shop">
+        <span class="nav-emoji">🛒</span><span>Shop</span>
+      </button>
+      <button class="nav-tab" data-screen="eggs">
+        <span class="nav-emoji">🥚</span><span>Eggs</span>
+      </button>
+      <button class="nav-tab" data-screen="battle">
+        <span class="nav-emoji">⚔️</span><span>Battle</span>
+      </button>
+    </nav>
+  </div>
+
+  <div id="toast"></div>
+
+  <script src="data.js"></script>
+  <script src="game.js"></script>
+  <script src="ui.js"></script>
+</body>
+</html>
