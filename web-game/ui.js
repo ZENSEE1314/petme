@@ -88,6 +88,9 @@ function renderActiveScreen() {
   switch (currentScreen) {
     case 'starter':   renderStarter();   break;
     case 'home':      renderHome();      break;
+    case 'farm':      renderFarm();      break;
+    case 'training':  renderTraining();  break;
+    case 'event':     renderEvent();     break;
     case 'collection':renderCollection();break;
     case 'shop':      renderShop();      break;
     case 'eggs':      renderEggs();      break;
@@ -173,12 +176,39 @@ function renderHome() {
   const meds     = Object.entries(g.state.inventory).filter(([id]) => g.ITEM_BY_ID[id]?.type === 'medicine');
   const toys     = Object.entries(g.state.inventory).filter(([id]) => g.ITEM_BY_ID[id]?.type === 'toy');
 
+  const activeEvent = g.getActiveEvent();
+  const allQuestsDone = activeEvent && activeEvent.quests.every(q =>
+    g.eventProgress(activeEvent.id, q.id) >= q.goal
+  );
+
   root.innerHTML = `
+    ${activeEvent ? `
+      <button class="event-banner" data-go="event">
+        <span class="event-banner-emoji">${activeEvent.emoji}</span>
+        <span class="event-banner-text">
+          <span class="event-banner-title">${activeEvent.name}</span>
+          <span class="event-banner-sub">${allQuestsDone ? '🎁 All quests complete — claim your Mythic Egg!' : 'Complete quests for rewards →'}</span>
+        </span>
+      </button>
+    ` : ''}
+
+    <div class="hub-quick-grid">
+      <button class="hub-quick" data-go="farm">
+        <div class="hub-emoji">🌱</div>
+        <div class="hub-label">Farm</div>
+      </button>
+      <button class="hub-quick" data-go="training">
+        <div class="hub-emoji">💪</div>
+        <div class="hub-label">Train</div>
+      </button>
+    </div>
+
     <div class="pet-card" style="--rarity:${rar.color}; --glow:${rar.glow}">
       <div class="pet-emoji${pet.isShiny ? ' shiny' : ''}">${sp.emoji}${pet.isShiny ? '✨' : ''}</div>
       <div class="pet-name">${sp.name}${pet.isStarter ? ' ⭐' : ''}</div>
       <div class="pet-element">${g.ELEMENT[sp.element].emoji} ${g.ELEMENT[sp.element].label} · <span class="rarity-chip" style="color:${rar.color}">${rar.label}</span></div>
       <div class="pet-mood">${moodFace} Mood ${mood}/100</div>
+      <div class="pet-stats">ATK ${pet.atk} · DEF ${pet.def} · SPD ${pet.spd} · INT ${pet.intl} · HP ${pet.hp}</div>
     </div>
 
     <div class="needs-grid">
@@ -229,6 +259,341 @@ function renderHome() {
       renderHome();
     });
   });
+
+  root.querySelectorAll('[data-go]').forEach(btn => {
+    btn.addEventListener('click', () => switchScreen(btn.dataset.go));
+  });
+}
+
+// ------------------------------------------------------------
+// Farm
+// ------------------------------------------------------------
+
+function renderFarm() {
+  const root = document.getElementById('screen-farm');
+  const seeds = Object.entries(g.state.inventory)
+    .filter(([id]) => g.ITEM_BY_ID[id]?.type === 'seed');
+  const crops = Object.entries(g.state.inventory)
+    .filter(([id]) => g.ITEM_BY_ID[id]?.type === 'crop');
+
+  root.innerHTML = `
+    <button class="back-btn" data-go="home">← Home</button>
+    <h2 class="screen-title">🌱 Farm</h2>
+    <p class="screen-sub">Plant seeds, water for +1 yield, harvest when ready.</p>
+
+    <div class="farm-grid">
+      ${g.state.farmPlots.map(plot => renderPlot(plot)).join('')}
+    </div>
+
+    <h3 class="shop-section-title">Seeds in inventory</h3>
+    <div class="seed-bar">
+      ${seeds.length === 0 ? '<div class="muted small">No seeds — buy some in the Shop.</div>' : seeds.map(([id, qty]) => {
+        const s = g.ITEM_BY_ID[id];
+        return `<div class="seed-chip">${s.emoji} ${s.name} <b>x${qty}</b> <span class="muted small">(${formatGrow(s.effect.grow_seconds)})</span></div>`;
+      }).join('')}
+    </div>
+
+    ${crops.length > 0 ? `
+      <h3 class="shop-section-title">Harvested crops</h3>
+      <div class="crops-grid">
+        ${crops.map(([id, qty]) => {
+          const c = g.ITEM_BY_ID[id];
+          const sellPrices = { 201: 5, 202: 25, 203: 80, 204: 200, 205: 600 };
+          return `
+            <div class="crop-card">
+              <div class="crop-emoji">${c.emoji}</div>
+              <div class="crop-name">${c.name}</div>
+              <div class="crop-qty">x${qty}</div>
+              <button class="sell-crop" data-id="${id}" data-qty="${qty}">Sell all (+${(sellPrices[id]||5)*qty}🪙)</button>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    ` : ''}
+  `;
+
+  // Plot click handlers
+  root.querySelectorAll('.farm-plot').forEach(el => {
+    const idx = Number(el.dataset.idx);
+    const plot = g.state.farmPlots[idx];
+    el.addEventListener('click', () => {
+      if (!plot.seedItemId) {
+        // Plant something
+        if (seeds.length === 0) { alert('No seeds — buy from Shop.'); return; }
+        showPlantPicker(idx, seeds);
+      } else if (Date.now() >= plot.readyAt) {
+        // Harvest
+        try {
+          const { cropItemId, qty } = g.harvestPlot(idx);
+          showToast(`Harvested +${qty} ${g.ITEM_BY_ID[cropItemId].name}!`);
+          renderFarm();
+        } catch (e) { alert(e.message); }
+      } else if (!plot.wateredAt) {
+        // Water
+        try { g.waterPlot(idx); showToast('Watered 💧 +10% faster, +1 yield'); renderFarm(); }
+        catch (e) { alert(e.message); }
+      }
+    });
+  });
+
+  root.querySelectorAll('.sell-crop').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      try {
+        const got = g.sellCrop(Number(btn.dataset.id), Number(btn.dataset.qty));
+        showToast(`+${got} 🪙`);
+        renderFarm();
+      } catch (e) { alert(e.message); }
+    });
+  });
+
+  root.querySelectorAll('[data-go]').forEach(btn => {
+    btn.addEventListener('click', () => switchScreen(btn.dataset.go));
+  });
+}
+
+function renderPlot(plot) {
+  if (!plot.seedItemId) {
+    return `<button class="farm-plot empty" data-idx="${plot.idx}"><span class="plot-emoji">🟫</span><span class="plot-label">Empty</span></button>`;
+  }
+  const seed = g.ITEM_BY_ID[plot.seedItemId];
+  const cropEmoji = g.ITEM_BY_ID[seed.effect.crop_item]?.emoji || '🌱';
+  const remaining = Math.max(0, plot.readyAt - Date.now());
+  if (remaining === 0) {
+    return `<button class="farm-plot ready" data-idx="${plot.idx}"><span class="plot-emoji wiggle">${cropEmoji}</span><span class="plot-label">Harvest!</span></button>`;
+  }
+  const growthPct = 100 - Math.round((remaining / (seed.effect.grow_seconds * 1000)) * 100);
+  const stage = growthPct < 40 ? '🌱' : growthPct < 80 ? '🌿' : cropEmoji;
+  const wateredIcon = plot.wateredAt ? '💧' : '';
+  return `
+    <button class="farm-plot growing" data-idx="${plot.idx}">
+      <span class="plot-emoji">${stage}${wateredIcon}</span>
+      <span class="plot-label">${formatGrow(remaining/1000)}</span>
+      <span class="plot-progress"><span class="plot-fill" style="width:${growthPct}%"></span></span>
+    </button>
+  `;
+}
+
+function formatGrow(sec) {
+  if (sec >= 3600) return Math.ceil(sec/3600) + 'h';
+  if (sec >= 60) return Math.ceil(sec/60) + 'm';
+  return Math.ceil(sec) + 's';
+}
+
+function showPlantPicker(plotIdx, seeds) {
+  const modal = document.createElement('div');
+  modal.className = 'modal';
+  modal.innerHTML = `
+    <div class="modal-card" style="max-width: 360px;">
+      <div class="modal-title">Plant a seed</div>
+      <div class="plant-picker">
+        ${seeds.map(([id, qty]) => {
+          const s = g.ITEM_BY_ID[id];
+          return `<button class="plant-pick-btn" data-id="${id}">${s.emoji} ${s.name} <span class="muted">x${qty} · ${formatGrow(s.effect.grow_seconds)}</span></button>`;
+        }).join('')}
+      </div>
+      <button class="modal-close-btn">Cancel</button>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  modal.querySelector('.modal-close-btn').onclick = () => modal.remove();
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+  modal.querySelectorAll('.plant-pick-btn').forEach(b => {
+    b.addEventListener('click', () => {
+      try {
+        g.plantSeed(plotIdx, Number(b.dataset.id));
+        modal.remove();
+        showToast('Planted 🌱');
+        renderFarm();
+      } catch (e) { alert(e.message); }
+    });
+  });
+}
+
+// ------------------------------------------------------------
+// Training
+// ------------------------------------------------------------
+
+function renderTraining() {
+  const root = document.getElementById('screen-training');
+  const pet = g.getActivePet();
+  if (!pet) { root.innerHTML = '<p class="muted center">No active pet.</p>'; return; }
+  const now = Date.now();
+
+  root.innerHTML = `
+    <button class="back-btn" data-go="home">← Home</button>
+    <h2 class="screen-title">💪 Training</h2>
+    <p class="screen-sub">Tap as fast as you can for 5 seconds — gain a permanent stat boost. Costs 10 energy.</p>
+
+    <div class="train-pet-info">
+      <span class="train-pet-emoji">${g.species(pet.speciesId).emoji}</span>
+      <span class="train-pet-stats">ATK ${pet.atk} · DEF ${pet.def} · SPD ${pet.spd} · INT ${pet.intl}</span>
+      <span class="train-pet-energy">⚡ Energy ${pet.energy}</span>
+    </div>
+
+    <div class="train-grid">
+      ${g.TRAINING_DEFS.map(t => {
+        const cd = g.state.trainCooldowns[t.stat] || 0;
+        const cdLeft = Math.max(0, Math.ceil((cd - now)/1000));
+        const ready = cdLeft === 0 && pet.energy >= g.TRAINING_CONFIG.energyCost;
+        return `
+          <button class="train-card" data-stat="${t.stat}" ${ready ? '' : 'disabled'}>
+            <div class="train-emoji">${t.emoji}</div>
+            <div class="train-label">${t.label}</div>
+            <div class="train-stat">+${t.stat.toUpperCase()}</div>
+            <div class="train-status">${cdLeft > 0 ? `⏳ ${cdLeft}s` : pet.energy < g.TRAINING_CONFIG.energyCost ? '💤 low energy' : '✅ ready'}</div>
+          </button>
+        `;
+      }).join('')}
+    </div>
+  `;
+
+  root.querySelectorAll('.train-card').forEach(btn => {
+    btn.addEventListener('click', () => {
+      try {
+        const def = g.startTraining(btn.dataset.stat);
+        showTrainingModal(def);
+      } catch (e) { alert(e.message); }
+    });
+  });
+  root.querySelectorAll('[data-go]').forEach(btn => {
+    btn.addEventListener('click', () => switchScreen(btn.dataset.go));
+  });
+}
+
+function showTrainingModal(def) {
+  const modal = document.createElement('div');
+  modal.className = 'modal';
+  const dur = g.TRAINING_CONFIG.durationSeconds;
+  modal.innerHTML = `
+    <div class="modal-card train-modal">
+      <div class="modal-title">${def.emoji} ${def.label}</div>
+      <p>${def.desc}</p>
+      <div class="train-timer">⏱️ <span id="train-timer">${dur}</span>s</div>
+      <div class="train-taps">Taps: <span id="train-taps">0</span></div>
+      <button id="tap-btn" class="train-tap-btn">${def.emoji} TAP!</button>
+      <div class="train-thresholds">
+        ${g.TRAINING_CONFIG.thresholds.filter(t=>t.gain>0).map(t => `<span>${t.taps}+ taps → +${t.gain} ${def.stat.toUpperCase()}</span>`).join('')}
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  let taps = 0;
+  let remaining = dur;
+  const tapBtn = modal.querySelector('#tap-btn');
+  const tapsEl = modal.querySelector('#train-taps');
+  const timerEl = modal.querySelector('#train-timer');
+  tapBtn.addEventListener('click', () => {
+    if (remaining <= 0) return;
+    taps++;
+    tapsEl.textContent = taps;
+    tapBtn.style.transform = 'scale(0.92)';
+    setTimeout(() => tapBtn.style.transform = '', 60);
+  });
+
+  const interval = setInterval(() => {
+    remaining = Math.max(0, remaining - 0.1);
+    timerEl.textContent = remaining.toFixed(1);
+    if (remaining <= 0) {
+      clearInterval(interval);
+      finishMinigame();
+    }
+  }, 100);
+
+  function finishMinigame() {
+    tapBtn.disabled = true;
+    const result = g.finishTraining(def.stat, taps);
+    modal.querySelector('.modal-title').textContent = result.gain > 0
+      ? `+${result.gain} ${def.stat.toUpperCase()}!`
+      : 'Not enough taps — try again.';
+    setTimeout(() => {
+      modal.remove();
+      renderTraining();
+    }, 1400);
+  }
+}
+
+// ------------------------------------------------------------
+// Event
+// ------------------------------------------------------------
+
+function renderEvent() {
+  const root = document.getElementById('screen-event');
+  const event = g.getActiveEvent();
+  if (!event) {
+    root.innerHTML = `<button class="back-btn" data-go="home">← Home</button><p class="muted center">No active event right now.</p>`;
+    root.querySelector('[data-go]').addEventListener('click', () => switchScreen('home'));
+    return;
+  }
+  const allDone = event.quests.every(q => g.eventProgress(event.id, q.id) >= q.goal);
+  const finalClaimed = g.state.eventProgress[event.id]?.finalClaimed;
+
+  root.innerHTML = `
+    <button class="back-btn" data-go="home">← Home</button>
+    <div class="event-hero">
+      <div class="event-hero-emoji">${event.emoji}</div>
+      <h2 class="event-hero-title">${event.name}</h2>
+      <p class="event-hero-desc">${event.description}</p>
+    </div>
+
+    <h3 class="shop-section-title">Quests</h3>
+    <div class="quests-grid">
+      ${event.quests.map(q => {
+        const prog = g.eventProgress(event.id, q.id);
+        const done = prog >= q.goal;
+        const claimed = g.state.eventProgress[event.id]?.[q.id + '_claimed'];
+        return `
+          <div class="quest-card ${done ? 'done' : ''} ${claimed ? 'claimed' : ''}">
+            <div class="quest-label">${q.label}</div>
+            <div class="quest-progress">
+              <span class="quest-bar"><span class="quest-fill" style="width:${Math.min(100, (prog/q.goal)*100)}%"></span></span>
+              <span class="quest-num">${Math.min(prog, q.goal)} / ${q.goal}</span>
+            </div>
+            <div class="quest-reward">${rewardLabel(q.reward)}</div>
+            <button class="quest-claim" data-q="${q.id}" ${done && !claimed ? '' : 'disabled'}>
+              ${claimed ? '✓ Claimed' : done ? 'Claim' : 'In progress'}
+            </button>
+          </div>
+        `;
+      }).join('')}
+    </div>
+
+    <div class="event-final ${allDone ? 'unlocked' : ''}">
+      <h3>🎁 Final Reward</h3>
+      <p>${rewardLabel(event.finalReward)} ${event.finalReward.mythicEgg ? '+ 🌈 Mythic Egg' : ''}</p>
+      <button class="big-btn" id="claim-final" ${allDone && !finalClaimed ? '' : 'disabled'}>
+        ${finalClaimed ? '✓ Already Claimed' : allDone ? 'Claim Mythic Egg!' : 'Complete all quests'}
+      </button>
+    </div>
+  `;
+
+  root.querySelectorAll('.quest-claim').forEach(btn => {
+    btn.addEventListener('click', () => {
+      try { g.claimEventQuest(btn.dataset.q); showToast('Reward claimed!'); renderEvent(); }
+      catch (e) { alert(e.message); }
+    });
+  });
+  document.getElementById('claim-final').addEventListener('click', () => {
+    try {
+      g.claimEventFinalReward();
+      showToast('🎉 Mythic Egg added to your eggs!');
+      renderEvent();
+    } catch (e) { alert(e.message); }
+  });
+  root.querySelectorAll('[data-go]').forEach(btn => {
+    btn.addEventListener('click', () => switchScreen(btn.dataset.go));
+  });
+}
+
+function rewardLabel(r) {
+  const parts = [];
+  if (r.coins)     parts.push(`🪙 ${r.coins}`);
+  if (r.gems)      parts.push(`💎 ${r.gems}`);
+  if (r.stardust)  parts.push(`✨ ${r.stardust}`);
+  if (r.tickets)   parts.push(`🎟️ ${r.tickets}`);
+  if (r.fragments) parts.push(`🧩 ${r.fragments}`);
+  return parts.join(' · ');
 }
 
 function needBar(label, value, kind) {

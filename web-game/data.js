@@ -102,6 +102,18 @@ const EGG_TYPES = [
 ];
 
 const ITEMS = [
+  // Seeds — plantable
+  { id: 101, name: 'Carrot Seed',          type: 'seed', emoji: '🥕', priceCoins: 2,    priceGems: null, effect: { crop_item: 201, grow_seconds: 30 } },
+  { id: 102, name: 'Wheat Seed',           type: 'seed', emoji: '🌾', priceCoins: 5,    priceGems: null, effect: { crop_item: 202, grow_seconds: 90 } },
+  { id: 103, name: 'Strawberry Seed',      type: 'seed', emoji: '🍓', priceCoins: 25,   priceGems: null, effect: { crop_item: 203, grow_seconds: 240 } },
+  { id: 104, name: 'Apple Tree Sapling',   type: 'seed', emoji: '🍎', priceCoins: 500,  priceGems: null, effect: { crop_item: 204, grow_seconds: 600, permanent: true, reharvest_seconds: 1200 } },
+  { id: 105, name: 'Golden Mushroom Spore',type: 'seed', emoji: '🍄', priceCoins: 1000, priceGems: 50,   effect: { crop_item: 205, grow_seconds: 1800 } },
+  // Crops — harvested output (feedable or sellable)
+  { id: 201, name: 'Carrot',          type: 'crop', emoji: '🥕', priceCoins: null, effect: { hunger: 10 } },
+  { id: 202, name: 'Wheat',           type: 'crop', emoji: '🌾', priceCoins: null, effect: { hunger: 15 } },
+  { id: 203, name: 'Strawberry',      type: 'crop', emoji: '🍓', priceCoins: null, effect: { hunger: 10, mood: 5 } },
+  { id: 204, name: 'Apple',           type: 'crop', emoji: '🍎', priceCoins: null, effect: { hunger: 15, mood: 5 } },
+  { id: 205, name: 'Golden Mushroom', type: 'crop', emoji: '🍄', priceCoins: null, effect: { mood: 30 } },
   // Food
   { id: 301, name: 'Pet Kibble',    type: 'food', emoji: '🍖', priceCoins: 10,  priceGems: null, effect: { hunger: 20 } },
   { id: 302, name: 'Premium Meal',  type: 'food', emoji: '🍱', priceCoins: 50,  priceGems: 5,    effect: { hunger: 50, mood: 10 } },
@@ -113,6 +125,54 @@ const ITEMS = [
   // Toys
   { id: 501, name: 'Squeaky Ball',  type: 'toy', emoji: '⚾', priceCoins: 30, priceGems: null, effect: { mood: 15 } },
   { id: 502, name: 'Plush Friend',  type: 'toy', emoji: '🧸', priceCoins: 150, priceGems: 15, effect: { mood: 25 } },
+];
+
+// ------------------------------------------------------------
+// Training — 4 mini-games, one per stat. Run as click-spam.
+// ------------------------------------------------------------
+
+const TRAINING_DEFS = [
+  { stat: 'atk',  label: 'Punching Bag', emoji: '🥊', desc: 'Tap the bag — more taps = bigger ATK boost.' },
+  { stat: 'def',  label: 'Wall Push',    emoji: '🧱', desc: 'Tap to push! DEF goes up.' },
+  { stat: 'spd',  label: 'Sprint',       emoji: '💨', desc: 'Tap to sprint! Raises SPD.' },
+  { stat: 'intl', label: 'Puzzle',       emoji: '🧩', desc: 'Tap to solve puzzles. INT up.' },
+];
+
+const TRAINING_CONFIG = {
+  durationSeconds: 5,
+  energyCost: 10,
+  thresholds: [
+    { taps: 50, gain: 3 },   // top tier
+    { taps: 25, gain: 2 },
+    { taps: 10, gain: 1 },
+    { taps: 0,  gain: 0 },
+  ],
+  cooldownSeconds: 30,
+};
+
+// ------------------------------------------------------------
+// Events — one rotating themed event at a time.
+// In v0.1 we hardcode an "always active" Spring Bloom event so
+// players have content from day one. Real events would rotate
+// monthly server-side.
+// ------------------------------------------------------------
+
+const EVENTS = [
+  {
+    id: 'spring-bloom-2026',
+    name: 'Spring Bloom Festival',
+    emoji: '🌸',
+    theme: 'spring',
+    startAt: 0,                          // 0 = always on for prototype
+    endAt: 9999999999999,
+    description: 'Hatch 3 eggs to claim a free Mythic Egg! Limited time.',
+    quests: [
+      { id: 'hatch3',    label: 'Hatch 3 eggs',            type: 'hatch_eggs',  goal: 3, reward: { stardust: 50, tickets: 1 } },
+      { id: 'winBattles',label: 'Win 5 battles',           type: 'win_battles', goal: 5, reward: { stardust: 30, fragments: 3 } },
+      { id: 'spendCoins',label: 'Spend 1000 coins in shop',type: 'spend_coins', goal: 1000, reward: { gems: 10 } },
+    ],
+    finalReward: { mythicEgg: true, stardust: 100 },
+  },
 ];
 
 // Constants used by gameplay

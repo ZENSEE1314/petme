@@ -19,7 +19,7 @@ let state = null;
 
 function defaultState() {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     player: {
       name: 'Trainer',
       createdAt: Date.now(),
@@ -35,6 +35,8 @@ function defaultState() {
       301: 3,  // 3 free Pet Kibble
       401: 2,  // 2 free Soap
       501: 1,  // 1 free Squeaky Ball
+      101: 5,  // 5 free Carrot Seeds — bootstrap farm
+      102: 2,  // 2 free Wheat Seeds
     },
     eggs: [],
     pity: {
@@ -47,6 +49,21 @@ function defaultState() {
     lastTickAt: Date.now(),
     eggPurchasesToday: { date: today(), count: 0 },
     battleHistory: [],
+    // Farm
+    farmPlots: Array.from({ length: 9 }, (_, i) => ({
+      idx: i,
+      seedItemId: null,
+      plantedAt: null,
+      readyAt: null,
+      wateredAt: null,
+      isPermanent: false,
+      reharvestSeconds: 0,
+    })),
+    // Training
+    trainCooldowns: { atk: 0, def: 0, spd: 0, intl: 0 },
+    // Events
+    eventProgress: {},   // { [eventId]: { [questId]: count, claimed: bool } }
+    eventStats: { spendCoins: 0 },  // session-wide stat trackers for event quests
   };
 }
 
@@ -266,6 +283,7 @@ function buyItem(itemId) {
 
   spend(cost, 'buy_' + item.id);
   state.inventory[itemId] = (state.inventory[itemId] || 0) + 1;
+  if (cost.coins) bumpEventQuest('spend_coins', cost.coins);
   saveState();
 }
 
@@ -313,6 +331,7 @@ function buyEgg(eggTypeId) {
 
   spend(cost, 'egg_purchase');
   state.eggPurchasesToday.count++;
+  if (cost.coins) bumpEventQuest('spend_coins', cost.coins);
 
   // Roll rarity (pity-aware)
   const rolledRarity = rollRarityWithPity(eggType);
@@ -406,7 +425,7 @@ function hatchEgg(eggId) {
   };
   state.monsters.push(monster);
   egg.hatchedAt = Date.now();
-  // Remove hatched eggs after 5 seconds visually (handled in UI), but mark now
+  bumpEventQuest('hatch_eggs', 1);
   saveState();
   return { monster, species: sp };
 }
@@ -567,9 +586,203 @@ function runBattle(teamMonsterIds) {
     npcTeam:  npcTeam.map(t => t.name).join(', '),
   });
   state.battleHistory = state.battleHistory.slice(0, 20);
+  if (won) bumpEventQuest('win_battles', 1);
   saveState();
 
   return { ...sim, won, trophyDelta, coinsReward, fragmentDrop, npcTeam };
+}
+
+// ------------------------------------------------------------
+// Farm — plant, water, harvest. Real-time, clock-driven.
+// ------------------------------------------------------------
+
+function plantSeed(plotIdx, seedItemId) {
+  const plot = state.farmPlots[plotIdx];
+  if (!plot) throw new Error('plot not found');
+  if (plot.seedItemId) throw new Error('plot occupied');
+  if ((state.inventory[seedItemId] || 0) < 1) throw new Error('out of seeds');
+  const seed = ITEM_BY_ID[seedItemId];
+  if (!seed || seed.type !== 'seed') throw new Error('not a seed');
+
+  state.inventory[seedItemId]--;
+  if (state.inventory[seedItemId] <= 0) delete state.inventory[seedItemId];
+
+  const eff = seed.effect;
+  plot.seedItemId = seedItemId;
+  plot.plantedAt = Date.now();
+  plot.readyAt = Date.now() + eff.grow_seconds * 1000;
+  plot.wateredAt = null;
+  plot.isPermanent = !!eff.permanent;
+  plot.reharvestSeconds = eff.reharvest_seconds || 0;
+  saveState();
+  return plot;
+}
+
+function waterPlot(plotIdx) {
+  const plot = state.farmPlots[plotIdx];
+  if (!plot) throw new Error('plot not found');
+  if (!plot.seedItemId) throw new Error('nothing to water');
+  if (plot.wateredAt) throw new Error('already watered this cycle');
+  plot.wateredAt = Date.now();
+  // Water also speeds growth by 10% of remaining time
+  const remaining = Math.max(0, plot.readyAt - Date.now());
+  plot.readyAt = Date.now() + Math.floor(remaining * 0.9);
+  saveState();
+  return plot;
+}
+
+function harvestPlot(plotIdx) {
+  const plot = state.farmPlots[plotIdx];
+  if (!plot) throw new Error('plot not found');
+  if (!plot.seedItemId) throw new Error('plot is empty');
+  if (Date.now() < plot.readyAt) throw new Error('not ready');
+
+  const seed = ITEM_BY_ID[plot.seedItemId];
+  const cropItemId = seed.effect.crop_item;
+  const baseYield = 1;
+  const wateredBonus = plot.wateredAt ? 1 : 0;
+  const totalYield = baseYield + wateredBonus;
+
+  state.inventory[cropItemId] = (state.inventory[cropItemId] || 0) + totalYield;
+
+  if (plot.isPermanent) {
+    plot.readyAt = Date.now() + plot.reharvestSeconds * 1000;
+    plot.wateredAt = null;
+  } else {
+    plot.seedItemId = null;
+    plot.plantedAt = null;
+    plot.readyAt = null;
+    plot.wateredAt = null;
+    plot.isPermanent = false;
+    plot.reharvestSeconds = 0;
+  }
+  saveState();
+  return { cropItemId, qty: totalYield };
+}
+
+function sellCrop(itemId, qty) {
+  const item = ITEM_BY_ID[itemId];
+  if (!item || item.type !== 'crop') throw new Error('not a crop');
+  if ((state.inventory[itemId] || 0) < qty) throw new Error('not enough');
+  // Sell price = 5x seed price approx, hard-coded here
+  const sellPrices = { 201: 5, 202: 25, 203: 80, 204: 200, 205: 600 };
+  const price = (sellPrices[itemId] || 5) * qty;
+  state.inventory[itemId] -= qty;
+  if (state.inventory[itemId] <= 0) delete state.inventory[itemId];
+  credit(price, 'coins');
+  saveState();
+  return price;
+}
+
+// ------------------------------------------------------------
+// Training — click-spam mini-game per stat
+// ------------------------------------------------------------
+
+function startTraining(stat) {
+  const def = TRAINING_DEFS.find(d => d.stat === stat);
+  if (!def) throw new Error('unknown stat');
+  const pet = getActivePet();
+  if (!pet) throw new Error('no active pet');
+  if (pet.energy < TRAINING_CONFIG.energyCost) throw new Error(`needs ${TRAINING_CONFIG.energyCost} energy`);
+  const cd = state.trainCooldowns[stat] || 0;
+  if (Date.now() < cd) {
+    throw new Error(`cooldown ${Math.ceil((cd - Date.now())/1000)}s left`);
+  }
+  return def;
+}
+
+function finishTraining(stat, taps) {
+  const pet = getActivePet();
+  if (!pet) throw new Error('no active pet');
+  let gain = 0;
+  for (const t of TRAINING_CONFIG.thresholds) {
+    if (taps >= t.taps) { gain = t.gain; break; }
+  }
+  pet[stat === 'intl' ? 'intl' : stat] += gain;
+  pet.energy = Math.max(0, pet.energy - TRAINING_CONFIG.energyCost);
+  state.trainCooldowns[stat] = Date.now() + TRAINING_CONFIG.cooldownSeconds * 1000;
+  saveState();
+  return { gain, taps };
+}
+
+// ------------------------------------------------------------
+// Events — quest tracking
+// ------------------------------------------------------------
+
+function getActiveEvent() {
+  const now = Date.now();
+  return EVENTS.find(e => now >= e.startAt && now <= e.endAt) || null;
+}
+
+function eventProgress(eventId, questId) {
+  return state.eventProgress[eventId]?.[questId] || 0;
+}
+
+function bumpEventQuest(type, amount = 1) {
+  const event = getActiveEvent();
+  if (!event) return;
+  for (const quest of event.quests) {
+    if (quest.type !== type) continue;
+    state.eventProgress[event.id] ??= {};
+    state.eventProgress[event.id][quest.id] = (state.eventProgress[event.id][quest.id] || 0) + amount;
+  }
+}
+
+function claimEventQuest(questId) {
+  const event = getActiveEvent();
+  if (!event) throw new Error('no active event');
+  const quest = event.quests.find(q => q.id === questId);
+  if (!quest) throw new Error('quest not found');
+  const progress = eventProgress(event.id, questId);
+  if (progress < quest.goal) throw new Error('not yet complete');
+  state.eventProgress[event.id] ??= {};
+  if (state.eventProgress[event.id][questId + '_claimed']) throw new Error('already claimed');
+
+  const r = quest.reward;
+  if (r.coins)     credit(r.coins,    'coins');
+  if (r.gems)      credit(r.gems,     'gems');
+  if (r.stardust)  credit(r.stardust, 'stardust');
+  if (r.tickets)   credit(r.tickets,  'tickets');
+  if (r.fragments) state.player.fragments += r.fragments;
+
+  state.eventProgress[event.id][questId + '_claimed'] = true;
+  saveState();
+  return r;
+}
+
+function claimEventFinalReward() {
+  const event = getActiveEvent();
+  if (!event) throw new Error('no active event');
+  const allDone = event.quests.every(q =>
+    eventProgress(event.id, q.id) >= q.goal
+  );
+  if (!allDone) throw new Error('finish all quests first');
+  if (state.eventProgress[event.id]?.finalClaimed) throw new Error('already claimed');
+
+  const r = event.finalReward;
+  if (r.stardust) credit(r.stardust, 'stardust');
+  if (r.mythicEgg) {
+    // Give them a Mythic Egg
+    const mythicType = EGG_BY_ID[4];
+    // Mythic egg drop weights only allow legendary in v0.1 (no mythic species seeded)
+    const rolledRarity = 'legendary';
+    const pool = SPECIES.filter(s => s.rarity === rolledRarity && !s.isStarter);
+    const picked = pool[Math.floor(Math.random() * pool.length)] || SPECIES.find(s => s.id === 30);
+    state.eggs.push({
+      id: uuid(),
+      eggTypeId: mythicType.id,
+      predeterminedSpeciesId: picked.id,
+      predeterminedShiny: Math.random() < (1 / 1024),  // boosted shiny for event egg
+      rolledRarity,
+      acquiredAt: Date.now(),
+      readyAt: Date.now() + 30000,  // 30s for prototype
+      hatchedAt: null,
+    });
+  }
+  state.eventProgress[event.id] ??= {};
+  state.eventProgress[event.id].finalClaimed = true;
+  saveState();
+  return r;
 }
 
 // ------------------------------------------------------------
@@ -580,9 +793,19 @@ function bootGame() {
   const loaded = loadState();
   if (loaded) {
     state = loaded;
-    // Migration: ensure newer fields exist
+    // Migrations from v1 → v2 (farm + training + events)
     if (state.player.fragments == null) state.player.fragments = 0;
     if (!state.battleHistory) state.battleHistory = [];
+    if (!state.farmPlots) {
+      state.farmPlots = Array.from({ length: 9 }, (_, i) => ({
+        idx: i, seedItemId: null, plantedAt: null, readyAt: null,
+        wateredAt: null, isPermanent: false, reharvestSeconds: 0,
+      }));
+    }
+    if (!state.trainCooldowns) state.trainCooldowns = { atk: 0, def: 0, spd: 0, intl: 0 };
+    if (!state.eventProgress) state.eventProgress = {};
+    if (!state.eventStats) state.eventStats = { spendCoins: 0 };
+    state.schemaVersion = 2;
     tickDecay();
   }
   return state !== null;
@@ -593,6 +816,7 @@ window.game = {
   // state access
   get state() { return state; },
   species, ITEM_BY_ID, EGG_BY_ID, SPECIES, ITEMS, EGG_TYPES, RARITY, ELEMENT, CONFIG,
+  TRAINING_DEFS, TRAINING_CONFIG, EVENTS,
   // lifecycle
   bootGame, hasSave, newGame, resetGame, saveState, loadState,
   // pet
@@ -601,6 +825,12 @@ window.game = {
   buyItem, buyEgg, hatchEgg, canBuyMoreEggsToday, redeemFragments,
   // battle
   runBattle,
+  // farm
+  plantSeed, waterPlot, harvestPlot, sellCrop,
+  // training
+  startTraining, finishTraining,
+  // events
+  getActiveEvent, eventProgress, claimEventQuest, claimEventFinalReward,
   // tick
   tickDecay,
 };

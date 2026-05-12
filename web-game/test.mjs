@@ -237,6 +237,109 @@ try {
 } catch (e) { capped = /daily egg cap/i.test(e.message); }
 ok(capped, 'daily egg cap enforced');
 
+section('farm');
+reset();
+g.newGame('Farmer');
+g.claimStarter(7);
+ok(g.state.farmPlots.length === 9, '9 plots auto-created');
+ok(g.state.farmPlots.every(p => p.seedItemId === null), 'all plots empty');
+ok((g.state.inventory[101] || 0) > 0, 'starter has carrot seeds');
+
+g.plantSeed(0, 101);
+ok(g.state.farmPlots[0].seedItemId === 101, 'planted carrot');
+ok(g.state.farmPlots[0].readyAt > Date.now(), 'has ready timer');
+
+threw = false;
+try { g.plantSeed(0, 101); } catch { threw = true; }
+ok(threw, 'cannot plant on occupied plot');
+
+threw = false;
+try { g.harvestPlot(0); } catch { threw = true; }
+ok(threw, 'cannot harvest before ready');
+
+g.waterPlot(0);
+ok(g.state.farmPlots[0].wateredAt > 0, 'plot watered');
+threw = false;
+try { g.waterPlot(0); } catch { threw = true; }
+ok(threw, 'cannot water twice');
+
+// Force-ready
+g.state.farmPlots[0].readyAt = Date.now() - 1000;
+const harvest = g.harvestPlot(0);
+ok(harvest.qty === 2, 'watered yield is 2');
+ok((g.state.inventory[201] || 0) === 2, 'carrots in inventory');
+ok(g.state.farmPlots[0].seedItemId === null, 'plot reset after harvest');
+
+const coinsBeforeSell = g.state.player.coins;
+const earned = g.sellCrop(201, 2);
+ok(earned === 10, 'sold 2 carrots for 10 coins');
+ok(g.state.player.coins === coinsBeforeSell + earned, 'coins credited');
+
+section('training');
+reset();
+g.newGame('Trainer');
+g.claimStarter(1);
+const beforeAtk = g.getActivePet().atk;
+const def = g.startTraining('atk');
+ok(def.stat === 'atk', 'training started');
+g.finishTraining('atk', 30);   // 25-49 → +2
+ok(g.getActivePet().atk === beforeAtk + 2, 'atk increased by 2 (30 taps)');
+ok(g.getActivePet().energy === 100 - g.TRAINING_CONFIG.energyCost, 'energy spent');
+
+threw = false;
+try { g.startTraining('atk'); } catch { threw = true; }
+ok(threw, 'cooldown blocks repeat training');
+
+// Forced low gain
+const beforeDef = g.getActivePet().def;
+g.startTraining('def');
+g.finishTraining('def', 5);   // <10 → 0 gain
+ok(g.getActivePet().def === beforeDef, 'too few taps = no gain');
+
+// No energy
+const tiredPet = g.getActivePet();
+tiredPet.energy = 5;
+threw = false;
+try { g.startTraining('spd'); } catch { threw = true; }
+ok(threw, 'low energy blocks training');
+
+section('events');
+reset();
+g.newGame('Eventer');
+g.claimStarter(4);
+const ev = g.getActiveEvent();
+ok(ev !== null, 'event is active');
+ok(ev.id === 'spring-bloom-2026', 'spring bloom event loaded');
+ok(g.eventProgress(ev.id, 'hatch3') === 0, 'initial hatch progress = 0');
+
+// Simulate hatching 3 eggs
+g.state.player.coins = 1000;
+for (let i = 0; i < 3; i++) {
+  const e = g.buyEgg(1);
+  e.readyAt = Date.now() - 1000;
+  g.hatchEgg(e.id);
+}
+ok(g.eventProgress(ev.id, 'hatch3') === 3, 'hatch3 quest progressed');
+
+const reward = g.claimEventQuest('hatch3');
+ok(reward.stardust === 50, 'claimed stardust reward');
+ok(g.state.player.stardust === 50, 'stardust credited');
+threw = false;
+try { g.claimEventQuest('hatch3'); } catch { threw = true; }
+ok(threw, 'cannot double-claim');
+
+// Cannot claim final without all quests
+threw = false;
+try { g.claimEventFinalReward(); } catch { threw = true; }
+ok(threw, 'final reward locked until all quests done');
+
+// Force-complete the other two
+g.state.eventProgress[ev.id].winBattles = 5;
+g.state.eventProgress[ev.id].spendCoins = 1000;
+const finalR = g.claimEventFinalReward();
+ok(finalR.mythicEgg === true, 'got mythic egg reward');
+ok(g.state.eggs.some(e => g.EGG_BY_ID[e.eggTypeId].tier === 'mythic'), 'mythic egg in inventory');
+
 // ============================================================
 console.log('\n--------');
 console.log(`${pass} passed, ${fail} failed`);
