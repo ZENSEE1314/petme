@@ -40,6 +40,8 @@ const sandbox = {
   Boolean,
   JSON,
   setTimeout, setInterval, clearTimeout, clearInterval,
+  btoa: (s) => Buffer.from(s, 'binary').toString('base64'),
+  atob: (s) => Buffer.from(s, 'base64').toString('binary'),
   window: {},
 };
 sandbox.window = sandbox; // shim for `window.game = ...`
@@ -495,6 +497,78 @@ g.setAdminOverride('species', 1, { atk: 500 });
 g.saveState();
 const reloadedState = g.loadState();
 ok(reloadedState.adminOverrides.species['1'].atk === 500, 'overrides persist in localStorage');
+
+section('dice battle');
+reset();
+g.newGame('Dicer');
+g.claimStarter(1);
+const dr = g.runBattle([g.state.activePetId]);
+ok(['attacker_win','defender_win','draw'].includes(dr.result), 'dice battle resolves');
+ok(dr.log.length > 0, 'dice battle has events');
+// At least one damage event should have a `roll` field 1..6
+const damageEvent = dr.log.find(ev => ev.roll != null);
+ok(damageEvent != null, 'dice events have roll field');
+ok(damageEvent.roll >= 1 && damageEvent.roll <= 6, `roll is 1..6 (got ${damageEvent?.roll})`);
+ok(damageEvent.atk > 0 && damageEvent.def > 0, 'event records atk/def used');
+
+section('friends + chat');
+reset();
+g.newGame('Sociable');
+ok((g.state.friends || []).length === 0, 'no friends initially');
+const f = g.addFriend('Sam');
+ok(g.state.friends.length === 1, 'friend added');
+ok(g.state.friends[0].name === 'Sam', 'name correct');
+ok(g.state.friends[0].isNpc === true, 'flagged as NPC');
+ok(g.state.chats[f.id].length === 1, 'welcome message present');
+
+threw = false;
+try { g.addFriend('Sam'); } catch { threw = true; }
+ok(threw, 'cannot add duplicate friend');
+
+g.sendMessage(f.id, 'hi');
+ok(g.state.chats[f.id].some(m => m.from === 'me' && m.text === 'hi'), 'my message stored');
+ok(g.state.pendingNpcReplies.length > 0, 'NPC reply queued');
+
+// Force-fire pending reply
+g.state.pendingNpcReplies.forEach(r => r.fireAt = 0);
+g.processNpcReplies();
+ok(g.state.chats[f.id].some(m => m.from === 'them' && /Sociable/.test(m.text)), 'NPC replied');
+
+g.removeFriend(f.id);
+ok(g.state.friends.length === 0, 'friend removed');
+ok(g.state.chats[f.id] == null, 'chat cleared with friend');
+
+section('plant help links + claim codes');
+reset();
+g.newGame('HelpMe');
+g.claimStarter(7);
+// Give a seed and plant it
+g.state.inventory[101] = 1;
+g.plantSeed(0, 101);
+const issued = g.issueHelpLinkForPlot(0);
+ok(issued.code && issued.code.length === 6, 'help code issued (6 chars)');
+ok(issued.payload, 'payload generated');
+
+// Friend opens the link, decodes
+const decoded = g.friendWaterPlant(issued.payload);
+ok(decoded.ownerName === 'HelpMe', 'payload encodes owner name');
+ok(decoded.plotIndex === 0, 'payload encodes plot index');
+ok(decoded.claimCode === issued.code, 'claim code matches');
+
+// Player redeems
+const beforeReadyAt = g.state.farmPlots[0].readyAt;
+const claimed = g.claimHelpCode(issued.code);
+const afterReadyAt = g.state.farmPlots[0].readyAt;
+ok(claimed.minutesOff === 5, 'claim returns 5 min off');
+ok(beforeReadyAt - afterReadyAt === 5 * 60 * 1000 || afterReadyAt === Date.now(), 'plot ready time advanced 5 min (or clamped to now)');
+
+threw = false;
+try { g.claimHelpCode(issued.code); } catch { threw = true; }
+ok(threw, 'cannot claim same code twice');
+
+threw = false;
+try { g.claimHelpCode('NOPE99'); } catch { threw = true; }
+ok(threw, 'invalid code rejected');
 
 // ============================================================
 console.log('\n--------');

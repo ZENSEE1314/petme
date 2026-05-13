@@ -1119,6 +1119,294 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 }
 
 /* ============================================================
+   Sub-tabs (used inside Dex/Collection)
+   ============================================================ */
+
+.sub-tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 16px;
+  background: var(--card);
+  padding: 4px;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+.sub-tab {
+  flex: 1;
+  background: transparent;
+  border: none;
+  padding: 10px;
+  font-weight: 700;
+  font-size: 14px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--text-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.sub-tab.active {
+  background: var(--primary);
+  color: white;
+}
+.sub-badge {
+  background: rgba(255,255,255,0.25);
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+}
+.sub-tab:not(.active) .sub-badge {
+  background: var(--bg);
+  color: var(--text-soft);
+}
+
+/* ============================================================
+   Friends + Chat
+   ============================================================ */
+
+.add-friend-form, .chat-form {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.add-friend-form input, .chat-form input {
+  flex: 1;
+  padding: 10px 14px;
+  border: 2px solid #e8e2f0;
+  border-radius: var(--radius-sm);
+  font-size: 16px;
+  font-family: inherit;
+  background: var(--card);
+  outline: none;
+}
+.add-friend-form input:focus, .chat-form input:focus { border-color: var(--primary); }
+.add-friend-form button, .chat-form button {
+  background: linear-gradient(135deg, var(--primary), var(--accent));
+  color: white;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 10px 18px;
+  font-weight: 700;
+}
+
+.friends-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.friend-row {
+  background: var(--card);
+  border: 1px solid #e8e2f0;
+  border-radius: var(--radius);
+  padding: 12px;
+  display: flex; align-items: center; gap: 12px;
+  text-align: left;
+  width: 100%;
+  cursor: pointer;
+  transition: transform 0.1s;
+  position: relative;
+}
+.friend-row:active { transform: scale(0.99); }
+.friend-emoji { font-size: 32px; }
+.friend-meta { flex: 1; min-width: 0; }
+.friend-name { font-weight: 700; }
+.friend-last {
+  font-size: 12px; color: var(--text-soft);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.unread-dot {
+  background: var(--accent);
+  color: white;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  margin-left: 4px;
+}
+.friend-remove {
+  background: transparent;
+  border: none;
+  color: var(--text-soft);
+  font-size: 16px;
+  padding: 4px 8px;
+  cursor: pointer;
+}
+.friend-remove:hover { color: var(--danger); }
+
+.chat-header {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px;
+  background: var(--card);
+  border-radius: var(--radius);
+  margin-bottom: 12px;
+  box-shadow: var(--shadow);
+}
+.chat-friend-emoji { font-size: 32px; }
+.chat-friend-name { font-weight: 800; font-size: 18px; }
+
+.chat-thread {
+  background: var(--bg-soft);
+  border-radius: var(--radius);
+  padding: 12px;
+  min-height: 300px;
+  max-height: 50vh;
+  overflow-y: auto;
+  display: flex; flex-direction: column; gap: 8px;
+  margin-bottom: 12px;
+}
+.chat-msg { display: flex; }
+.chat-msg.me { justify-content: flex-end; }
+.chat-msg.them { justify-content: flex-start; }
+.chat-bubble {
+  max-width: 78%;
+  padding: 8px 12px;
+  border-radius: 16px;
+  font-size: 14px;
+  word-wrap: break-word;
+}
+.chat-msg.me   .chat-bubble {
+  background: linear-gradient(135deg, var(--primary), var(--accent));
+  color: white;
+  border-bottom-right-radius: 4px;
+}
+.chat-msg.them .chat-bubble {
+  background: white;
+  color: var(--text);
+  border-bottom-left-radius: 4px;
+  box-shadow: var(--shadow);
+}
+
+.back-btn {
+  background: none;
+  border: none;
+  color: var(--primary);
+  font-weight: 700;
+  padding: 4px 0;
+  margin-bottom: 8px;
+  cursor: pointer;
+  font-size: 14px;
+}
+.back-btn:hover { text-decoration: underline; }
+
+/* ============================================================
+   Plant help (share link + claim)
+   ============================================================ */
+
+.farm-help-row {
+  display: flex;
+  gap: 8px;
+  margin: 16px 0;
+}
+.help-action-btn {
+  flex: 1;
+  background: var(--card);
+  border: 2px dashed var(--primary-soft);
+  border-radius: var(--radius);
+  padding: 10px;
+  font-weight: 700;
+  color: var(--primary);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.help-action-btn:hover { background: var(--primary-soft); color: white; }
+
+.share-help-modal {
+  max-width: 420px;
+}
+.share-link-input {
+  width: 100%;
+  padding: 10px 12px;
+  margin-top: 12px;
+  border: 1px solid #ddd;
+  border-radius: var(--radius-sm);
+  font-family: 'SF Mono', 'Consolas', monospace;
+  font-size: 12px;
+  background: var(--bg);
+}
+
+.help-inbox {
+  display: flex; flex-direction: column; gap: 8px;
+}
+.help-row {
+  background: linear-gradient(135deg, #fef3c7, #fde68a);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  flex-wrap: wrap;
+}
+.help-claim-btn {
+  background: var(--primary);
+  color: white;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 8px 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+/* Help-mode standalone page (opened by a friend via URL) */
+#help-mode-screen {
+  min-height: 100vh;
+  display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(160deg, #e0e7ff 0%, #fef6f0 100%);
+  padding: 24px;
+}
+.help-card {
+  background: white;
+  border-radius: var(--radius);
+  padding: 32px;
+  text-align: center;
+  max-width: 420px;
+  width: 100%;
+  box-shadow: var(--shadow-hi);
+}
+.help-emoji { font-size: 64px; margin-bottom: 16px; }
+.help-card h1 { margin: 0 0 8px; font-size: 24px; }
+.help-card p { color: var(--text-soft); margin: 0 0 24px; }
+.help-code-output {
+  margin-top: 24px;
+  padding: 16px;
+  background: var(--bg);
+  border-radius: var(--radius-sm);
+}
+.help-code-display {
+  font-family: 'SF Mono', 'Consolas', monospace;
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: 4px;
+  color: var(--primary);
+  margin: 12px 0;
+  background: white;
+  padding: 12px;
+  border-radius: var(--radius-sm);
+  border: 2px dashed var(--primary-soft);
+}
+
+/* ============================================================
+   Battle log dice formatting
+   ============================================================ */
+
+.die-face {
+  display: inline-block;
+  background: var(--card);
+  color: var(--primary);
+  padding: 1px 8px;
+  border-radius: 6px;
+  font-weight: 700;
+  font-size: 13px;
+}
+.dmg-calc {
+  font-family: 'SF Mono', 'Consolas', monospace;
+  font-size: 12px;
+  color: var(--text-soft);
+}
+.hp-after {
+  color: var(--text-soft);
+  font-size: 12px;
+}
+
+/* ============================================================
    Mobile bumps
    ============================================================ */
 

@@ -15,6 +15,15 @@ let battleAnimating = false;
 
 window.addEventListener('DOMContentLoaded', () => {
   const loaded = g.bootGame();
+
+  // ?help=<base64> URL → enter friend-help mode regardless of save state
+  const params = new URLSearchParams(location.search);
+  const helpPayload = params.get('help');
+  if (helpPayload) {
+    enterHelpMode(helpPayload);
+    return;
+  }
+
   if (!loaded) {
     showSignUp();
   } else {
@@ -26,6 +35,9 @@ window.addEventListener('DOMContentLoaded', () => {
     btn.addEventListener('click', () => switchScreen(btn.dataset.screen));
   });
 
+  // Help-mode UI doesn't need the tick
+  // ------------------------------------------------------------
+
   // Tick loop — 1s for live countdowns.
   // Don't disrupt the user if they're typing into a form field
   // (admin tables especially) — wholesale innerHTML replacement
@@ -33,12 +45,16 @@ window.addEventListener('DOMContentLoaded', () => {
   setInterval(() => {
     if (!g.state) return;
     g.tickDecay();
+    // Fire any due NPC chat replies
+    g.processNpcReplies();
     const ae = document.activeElement;
     const isEditing = ae && (
       ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.tagName === 'SELECT'
     );
-    if (isEditing) {
-      renderHeader();   // currency bar can still refresh
+    // Don't disrupt: user typing in any input, or a battle animating in
+    // the battle screen — both would lose the in-flight DOM state.
+    if (isEditing || battleAnimating) {
+      renderHeader();
     } else {
       renderActiveScreen();
     }
@@ -103,9 +119,10 @@ function renderActiveScreen() {
     case 'event':     renderEvent();     break;
     case 'collection':renderCollection();break;
     case 'shop':      renderShop();      break;
-    case 'eggs':      renderEggs();      break;
+    case 'eggs':      switchScreen('collection'); collectionTab = 'eggs'; break;
     case 'battle':    renderBattle();    break;
     case 'admin':     renderAdmin();     break;
+    case 'friends':   renderFriends();   break;
   }
 }
 
@@ -320,6 +337,11 @@ function renderFarm() {
       ${g.state.farmPlots.map(plot => renderPlot(plot)).join('')}
     </div>
 
+    <div class="farm-help-row">
+      <button class="help-action-btn" id="get-help-btn">🔗 Get help (share link)</button>
+      <button class="help-action-btn" id="claim-help-btn">📬 Enter claim code</button>
+    </div>
+
     <h3 class="shop-section-title">Seeds in inventory</h3>
     <div class="seed-bar">
       ${seeds.length === 0 ? '<div class="muted small">No seeds — buy some in the Shop.</div>' : seeds.map(([id, qty]) => {
@@ -385,6 +407,53 @@ function renderFarm() {
   root.querySelectorAll('[data-go]').forEach(btn => {
     btn.addEventListener('click', () => switchScreen(btn.dataset.go));
   });
+
+  document.getElementById('get-help-btn').onclick = () => {
+    // Pick the first growing plot
+    const plot = g.state.farmPlots.find(p => p.seedItemId && Date.now() < p.readyAt);
+    if (!plot) { alert('Plant a seed first, then your friends can help water it.'); return; }
+    showShareHelpModal(plot.idx);
+  };
+  document.getElementById('claim-help-btn').onclick = () => {
+    const code = prompt('Paste the claim code your friend sent:');
+    if (!code) return;
+    try {
+      const r = g.claimHelpCode(code);
+      showToast(`✅ Plot #${r.plotIndex + 1}: -${r.minutesOff} min off the timer!`);
+      renderFarm();
+    } catch (e) { alert(e.message); }
+  };
+}
+
+function showShareHelpModal(plotIdx) {
+  let url, code;
+  try {
+    const r = g.issueHelpLinkForPlot(plotIdx);
+    code = r.code;
+    url = `${location.origin}${location.pathname}?help=${encodeURIComponent(r.payload)}`;
+  } catch (e) { alert(e.message); return; }
+
+  const modal = document.createElement('div');
+  modal.className = 'modal';
+  modal.innerHTML = `
+    <div class="modal-card share-help-modal">
+      <div class="modal-title">🔗 Share help link</div>
+      <p>Send this link to a friend. They open it, tap "Water it!", and send the claim code back to you.</p>
+      <input class="share-link-input" id="share-link-input" readonly value="${url}">
+      <button id="copy-share-link" class="big-btn">📋 Copy link</button>
+      <p class="muted small" style="margin-top:8px">Claim code (will appear on their side): <code>${code}</code></p>
+      <button class="modal-close-btn" id="share-help-close">Done</button>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  document.getElementById('copy-share-link').onclick = async () => {
+    const inp = document.getElementById('share-link-input');
+    inp.select();
+    try { await navigator.clipboard.writeText(url); document.getElementById('copy-share-link').textContent = '✅ Copied'; }
+    catch { document.execCommand('copy'); }
+  };
+  document.getElementById('share-help-close').onclick = () => modal.remove();
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
 }
 
 function renderPlot(plot) {
@@ -700,15 +769,67 @@ function actionGroup(label, items, _kind) {
 // Collection — 30-slot dex grid
 // ------------------------------------------------------------
 
+let collectionTab = 'eggs';   // default to eggs (first page)
+
 function renderCollection() {
   const root = document.getElementById('screen-collection');
+  const eggsCount = (g.state.eggs || []).filter(e => !e.hatchedAt).length;
   const owned = new Set(g.state.monsters.map(m => m.speciesId));
   const ownedCount = owned.size;
   const total = g.SPECIES.length;
 
   root.innerHTML = `
-    <h2 class="screen-title">Your Collection</h2>
-    <p class="screen-sub">${ownedCount} / ${total} discovered</p>
+    <div class="sub-tabs">
+      <button class="sub-tab ${collectionTab === 'eggs' ? 'active' : ''}" data-sub="eggs">
+        🥚 Eggs${eggsCount > 0 ? ` <span class="sub-badge">${eggsCount}</span>` : ''}
+      </button>
+      <button class="sub-tab ${collectionTab === 'dex' ? 'active' : ''}" data-sub="dex">
+        📦 Dex <span class="sub-badge">${ownedCount}/${total}</span>
+      </button>
+    </div>
+    <div id="collection-content"></div>
+  `;
+  root.querySelectorAll('.sub-tab').forEach(b => {
+    b.addEventListener('click', () => {
+      collectionTab = b.dataset.sub;
+      renderCollection();
+    });
+  });
+
+  const content = document.getElementById('collection-content');
+  if (collectionTab === 'eggs')      content.innerHTML = renderEggsBody();
+  else if (collectionTab === 'dex')  content.innerHTML = renderDexBody();
+  wireCollectionEvents(content);
+}
+
+function renderEggsBody() {
+  const eggs = (g.state.eggs || []).filter(e => !e.hatchedAt);
+  if (eggs.length === 0) {
+    return `<p class="screen-sub center" style="margin-top:32px">No eggs incubating. Visit the Shop to buy one!</p>`;
+  }
+  return `
+    <div class="eggs-grid">
+      ${eggs.map(e => {
+        const eggType = g.EGG_BY_ID[e.eggTypeId];
+        const rar = g.RARITY[eggType.tier];
+        const msLeft = Math.max(0, e.readyAt - Date.now());
+        const ready = msLeft === 0;
+        return `
+          <div class="egg-card ${ready ? 'ready' : ''}" style="--rarity:${rar.color}; --glow:${rar.glow}">
+            <div class="egg-emoji ${ready ? 'wiggle' : ''}">${eggType.emoji}</div>
+            <div class="egg-name" style="color:${rar.color}">${eggType.name}</div>
+            <div class="egg-timer">${ready ? '✨ Ready to hatch!' : `⏳ ${formatDuration(Math.ceil(msLeft/1000))}`}</div>
+            <button class="hatch-btn" data-egg="${e.id}" ${ready ? '' : 'disabled'}>Hatch!</button>
+          </div>
+        `;
+      }).join('')}
+    </div>
+  `;
+}
+
+function renderDexBody() {
+  const owned = new Set(g.state.monsters.map(m => m.speciesId));
+  return `
     <div class="dex-grid">
       ${g.SPECIES.map(s => {
         const isOwned = owned.has(s.id);
@@ -725,7 +846,20 @@ function renderCollection() {
     </div>
     <button id="reset-game-btn" class="danger-btn">🗑️ Reset game (wipe all progress)</button>
   `;
-  document.getElementById('reset-game-btn').onclick = handleReset;
+}
+
+function wireCollectionEvents(root) {
+  root.querySelectorAll('.hatch-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      try {
+        const { monster, species: sp } = g.hatchEgg(btn.dataset.egg);
+        showHatchModal(sp, monster.isShiny);
+        renderCollection();
+      } catch (e) { alert(e.message); }
+    });
+  });
+  const reset = document.getElementById('reset-game-btn');
+  if (reset) reset.onclick = handleReset;
 }
 
 // ------------------------------------------------------------
@@ -847,50 +981,7 @@ function effectLabel(eff) {
 // Eggs — incubating + ready
 // ------------------------------------------------------------
 
-function renderEggs() {
-  const root = document.getElementById('screen-eggs');
-  const eggs = g.state.eggs.filter(e => !e.hatchedAt);
-  if (eggs.length === 0) {
-    root.innerHTML = `
-      <h2 class="screen-title">Eggs</h2>
-      <p class="screen-sub">No eggs incubating. Visit the Shop to buy one!</p>
-    `;
-    return;
-  }
-
-  root.innerHTML = `
-    <h2 class="screen-title">Eggs</h2>
-    <div class="eggs-grid">
-      ${eggs.map(e => {
-        const eggType = g.EGG_BY_ID[e.eggTypeId];
-        const rar = g.RARITY[eggType.tier];
-        const msLeft = Math.max(0, e.readyAt - Date.now());
-        const ready = msLeft === 0;
-        const mins = Math.floor(msLeft / 60000);
-        const secs = Math.floor((msLeft % 60000) / 1000);
-        return `
-          <div class="egg-card ${ready ? 'ready' : ''}" style="--rarity:${rar.color}; --glow:${rar.glow}">
-            <div class="egg-emoji ${ready ? 'wiggle' : ''}">${eggType.emoji}</div>
-            <div class="egg-name" style="color:${rar.color}">${eggType.name}</div>
-            <div class="egg-timer">${ready ? '✨ Ready to hatch!' : `⏳ ${mins}:${String(secs).padStart(2,'0')}`}</div>
-            <button class="hatch-btn" data-egg="${e.id}" ${ready ? '' : 'disabled'}>Hatch!</button>
-          </div>
-        `;
-      }).join('')}
-    </div>
-  `;
-
-  root.querySelectorAll('.hatch-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      try {
-        const { monster, species: sp } = g.hatchEgg(btn.dataset.egg);
-        const rar = g.RARITY[sp.rarity];
-        showHatchModal(sp, monster.isShiny);
-        renderEggs();
-      } catch (e) { alert(e.message); }
-    });
-  });
-}
+// renderEggs() removed — eggs now live as a sub-tab inside renderCollection()
 
 function showHatchModal(sp, isShiny) {
   const rar = g.RARITY[sp.rarity];
@@ -997,12 +1088,13 @@ function animateBattle(result) {
     const ev = result.log[i++];
     const li = document.createElement('li');
     if (ev.fainted != null) {
-      li.innerHTML = `💀 <b>${ev.targetName}</b> fainted!`;
+      li.innerHTML = `💀 <b>${ev.targetEmoji || ''} ${ev.targetName}</b> fainted!`;
       li.className = 'battle-faint';
     } else {
       const tag = ev.actor === 'a' ? '🟢' : '🔴';
+      const die = ['⚀','⚁','⚂','⚃','⚄','⚅'][ev.roll - 1] || '🎲';
       const hpPct = Math.round((ev.targetHpAfter / ev.targetHpMax) * 100);
-      li.innerHTML = `${tag} <b>${ev.attackerName}</b> hit <b>${ev.targetName}</b> for ${ev.damage}  (${ev.targetName} HP: ${hpPct}%)`;
+      li.innerHTML = `${tag} <b>${ev.attackerEmoji || ''} ${ev.attackerName}</b> rolled <span class="die-face">${die} ${ev.roll}</span> → <span class="dmg-calc">${ev.roll}×${ev.atk} − ${ev.def} = <b>${ev.damage}</b></span> dmg to ${ev.targetEmoji || ''} ${ev.targetName} <span class="hp-after">(${hpPct}% HP)</span>`;
     }
     stepsEl.appendChild(li);
     li.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -1226,6 +1318,183 @@ function renderAdminEggs() {
       <tbody>${rows}</tbody>
     </table>
   `;
+}
+
+// ------------------------------------------------------------
+// Friends + Chat (local NPC friends — no backend)
+// ------------------------------------------------------------
+
+let activeChat = null;   // friend.id currently open
+
+function renderFriends() {
+  const root = document.getElementById('screen-friends');
+  const friends = g.state.friends || [];
+  const f = activeChat ? friends.find(x => x.id === activeChat) : null;
+
+  if (f) {
+    // Chat view for selected friend
+    const msgs = (g.state.chats?.[f.id] || []);
+    root.innerHTML = `
+      <button class="back-btn" id="back-to-friends">← All friends</button>
+      <div class="chat-header">
+        <span class="chat-friend-emoji">${f.emoji}</span>
+        <div class="chat-friend-name">${f.name}</div>
+      </div>
+      <div class="chat-thread" id="chat-thread">
+        ${msgs.map(m => `
+          <div class="chat-msg ${m.from}"><div class="chat-bubble">${escapeHtml(m.text)}</div></div>
+        `).join('')}
+      </div>
+      <form class="chat-form" id="chat-form">
+        <input id="chat-input" type="text" maxlength="200" placeholder="Type a message…" autocomplete="off">
+        <button type="submit">Send</button>
+      </form>
+      <p class="muted small center" style="margin-top:8px">
+        Type "help" or "water" to ask for plant watering!
+      </p>
+    `;
+    document.getElementById('back-to-friends').onclick = () => { activeChat = null; renderFriends(); };
+    document.getElementById('chat-form').onsubmit = (e) => {
+      e.preventDefault();
+      const inp = document.getElementById('chat-input');
+      try { g.sendMessage(f.id, inp.value); inp.value = ''; renderFriends(); }
+      catch (er) { alert(er.message); }
+    };
+    const thread = document.getElementById('chat-thread');
+    if (thread) thread.scrollTop = thread.scrollHeight;
+    return;
+  }
+
+  // Friends list view
+  root.innerHTML = `
+    <h2 class="screen-title">👥 Friends</h2>
+    <p class="screen-sub">Add friends to chat — they can also help water your plants!</p>
+    <form class="add-friend-form" id="add-friend-form">
+      <input id="friend-name-input" type="text" maxlength="20" placeholder="Friend's name" autocomplete="off">
+      <button type="submit">+ Add</button>
+    </form>
+    ${friends.length === 0 ? `
+      <p class="muted center" style="margin-top:32px">No friends yet. Add one above to get started!</p>
+    ` : `
+      <div class="friends-list">
+        ${friends.map(f => {
+          const msgs = g.state.chats?.[f.id] || [];
+          const last = msgs[msgs.length - 1];
+          const unread = msgs.filter(m => m.from === 'them' && !m.read).length;
+          return `
+            <button class="friend-row" data-friend-id="${f.id}">
+              <span class="friend-emoji">${f.emoji}</span>
+              <div class="friend-meta">
+                <div class="friend-name">${f.name}${unread > 0 ? ` <span class="unread-dot">${unread}</span>` : ''}</div>
+                <div class="friend-last">${last ? escapeHtml(last.text).slice(0, 50) : 'Tap to chat'}</div>
+              </div>
+              <button class="friend-remove" data-remove="${f.id}" title="Remove">✕</button>
+            </button>
+          `;
+        }).join('')}
+      </div>
+    `}
+    ${renderHelpInbox()}
+  `;
+
+  document.getElementById('add-friend-form').onsubmit = (e) => {
+    e.preventDefault();
+    const inp = document.getElementById('friend-name-input');
+    try { g.addFriend(inp.value); inp.value = ''; renderFriends(); }
+    catch (er) { alert(er.message); }
+  };
+  root.querySelectorAll('.friend-row').forEach(row => {
+    row.addEventListener('click', (e) => {
+      if (e.target.dataset.remove) return;     // ignore click on the X
+      activeChat = row.dataset.friendId;
+      // Mark all messages from this friend as read
+      const msgs = g.state.chats?.[activeChat] || [];
+      msgs.forEach(m => m.read = true);
+      g.saveState();
+      renderFriends();
+    });
+  });
+  root.querySelectorAll('.friend-remove').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (confirm('Remove this friend?')) { g.removeFriend(btn.dataset.remove); renderFriends(); }
+    });
+  });
+}
+
+function renderHelpInbox() {
+  const codes = Object.entries(g.state.receivedHelpCodes || {})
+    .filter(([, info]) => !info.claimed);
+  if (codes.length === 0) return '';
+  return `
+    <h3 class="screen-title" style="margin-top:24px;font-size:18px">📬 Help received</h3>
+    <p class="screen-sub">A friend watered one of your plants! Tap claim to apply -5 min.</p>
+    <div class="help-inbox">
+      ${codes.map(([code, info]) => `
+        <div class="help-row">
+          <div>${info.friendName} watered your plot #${info.plotIndex + 1}</div>
+          <button class="help-claim-btn" data-code="${code}">Claim -5 min</button>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+function escapeHtml(s) {
+  return String(s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+// ------------------------------------------------------------
+// Help mode — opened by a friend via ?help=<payload> URL
+// ------------------------------------------------------------
+
+function enterHelpMode(payload) {
+  document.getElementById('sign-up-screen').style.display = 'none';
+  document.getElementById('app').style.display = 'none';
+
+  let decoded;
+  try { decoded = g.friendWaterPlant(payload); }
+  catch { return showHelpError('That link looks broken or expired.'); }
+
+  const helpRoot = document.createElement('div');
+  helpRoot.id = 'help-mode-screen';
+  helpRoot.innerHTML = `
+    <div class="help-card">
+      <div class="help-emoji">🌱</div>
+      <h1>Help ${escapeHtml(decoded.ownerName)}!</h1>
+      <p>Their plant in plot #${decoded.plotIndex + 1} could use a watering. Want to help?</p>
+      <button id="help-water-btn" class="big-btn">🚿 Water it (-5 min off their timer)</button>
+      <div id="help-code-output" class="help-code-output" style="display:none">
+        <p style="margin-top:24px">🎉 Thanks! Tell <b>${escapeHtml(decoded.ownerName)}</b> to enter this claim code:</p>
+        <div class="help-code-display"><code id="claim-code-text"></code></div>
+        <button id="copy-help-code" class="big-btn">📋 Copy code</button>
+        <p class="muted small" style="margin-top:16px">They can also paste it into their Friends → 📬 Help inbox.</p>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(helpRoot);
+
+  document.getElementById('help-water-btn').onclick = () => {
+    document.getElementById('claim-code-text').textContent = decoded.claimCode;
+    document.getElementById('help-code-output').style.display = 'block';
+    document.getElementById('help-water-btn').disabled = true;
+    document.getElementById('help-water-btn').textContent = '✅ Watered!';
+  };
+  document.getElementById('copy-help-code').onclick = async () => {
+    try {
+      await navigator.clipboard.writeText(decoded.claimCode);
+      document.getElementById('copy-help-code').textContent = '✅ Copied';
+    } catch { /* clipboard blocked */ }
+  };
+}
+
+function showHelpError(msg) {
+  const root = document.createElement('div');
+  root.id = 'help-mode-screen';
+  root.innerHTML = `<div class="help-card"><h1>😕</h1><p>${msg}</p></div>`;
+  document.body.appendChild(root);
 }
 
 // ------------------------------------------------------------

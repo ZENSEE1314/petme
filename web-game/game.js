@@ -75,6 +75,12 @@ function defaultState() {
     eventStats: { spendCoins: 0 },  // session-wide stat trackers for event quests
     // Admin overrides — { species: {[id]: {...patch}}, items: {...}, eggs: {...} }
     adminOverrides: { species: {}, items: {}, eggs: {} },
+    // Social — local-only (no backend). NPC friends auto-reply via chat.
+    friends: [],                // [{ id, name, emoji, addedAt, isNpc }]
+    chats: {},                  // { [friendId]: [{ from:'me'|'them', text, at }] }
+    pendingNpcReplies: [],      // queue of NPC chat replies to fire on tick
+    issuedHelpCodes: {},        // { [code]: { plotIndex, plotId, createdAt } } — I issued, friend redeems
+    receivedHelpCodes: {},      // { [code]: { friendName, plotIndex, claimed:bool } } — friend issued, I redeem
   };
 }
 
@@ -582,17 +588,25 @@ function buildNpcTeam(playerTrophies, size = 3) {
   return team;
 }
 
-function computeDamage(atkr, dfdr, rng) {
-  const base = (((2 * atkr.level / 5 + 2) * atkr.atk * atkr.atk / Math.max(1, dfdr.def)) / 50) + 2;
+/**
+ * Dice-roll battle:
+ *   Each turn, the active attacker rolls 1d6.
+ *   Damage = (roll × attacker.atk - defender.def), minimum 1.
+ *   Type-effectiveness multiplier still applies (Fire>Grass etc.).
+ *   The two teams take turns rolling; first to reach 0 HP loses.
+ *   Speed decides who rolls first; ties go to the attacker.
+ */
+function computeDiceDamage(roll, atkr, dfdr) {
   const typeMul = TYPE_CHART[atkr.element]?.[dfdr.element] ?? 1;
-  const randomFactor = 0.85 + rng() * 0.15;
-  return Math.max(1, Math.floor(base * randomFactor * typeMul));
+  const raw = roll * atkr.atk - dfdr.def;
+  return Math.max(1, Math.floor(raw * typeMul));
 }
 
 function simulateBattle(teamA, teamB, seed) {
   const log = [];
   const rng = mulberry32(seed);
   let aIdx = 0, bIdx = 0, turn = 0;
+  const roll = () => 1 + Math.floor(rng() * 6);   // 1..6
 
   while (aIdx < teamA.length && bIdx < teamB.length && turn < 50) {
     turn++;
@@ -605,15 +619,30 @@ function simulateBattle(teamA, teamB, seed) {
       const atkr = actor === 'a' ? a : b;
       const dfdr = actor === 'a' ? b : a;
       if (atkr.currentHp <= 0 || dfdr.currentHp <= 0) continue;
-      const dmg = computeDamage(atkr, dfdr, rng);
+
+      const r = roll();
+      const dmg = computeDiceDamage(r, atkr, dfdr);
       dfdr.currentHp = Math.max(0, dfdr.currentHp - dmg);
-      log.push({ turn, actor, attackerIdx: actor === 'a' ? aIdx : bIdx,
-                 targetIdx: actor === 'a' ? bIdx : aIdx, damage: dmg,
-                 attackerName: atkr.name, targetName: dfdr.name,
-                 targetHpAfter: dfdr.currentHp, targetHpMax: dfdr.hp });
+
+      log.push({
+        turn, actor,
+        attackerIdx: actor === 'a' ? aIdx : bIdx,
+        targetIdx:   actor === 'a' ? bIdx : aIdx,
+        roll: r,                          // 1..6, the die face
+        atk: atkr.atk,
+        def: dfdr.def,
+        damage: dmg,
+        attackerName: atkr.name,
+        attackerEmoji: atkr.emoji,
+        targetName:   dfdr.name,
+        targetEmoji:  dfdr.emoji,
+        targetHpAfter: dfdr.currentHp,
+        targetHpMax:  dfdr.hp,
+      });
+
       if (dfdr.currentHp <= 0) {
         log.push({ turn, actor, fainted: actor === 'a' ? bIdx : aIdx,
-                   targetName: dfdr.name });
+                   targetName: dfdr.name, targetEmoji: dfdr.emoji });
         break;
       }
     }
@@ -856,6 +885,209 @@ function claimEventFinalReward() {
 }
 
 // ------------------------------------------------------------
+// Friends — local list, NPC friends simulate chat + plant watering
+// ------------------------------------------------------------
+
+const NPC_REPLIES = [
+  "How's your pet doing? 🐾",
+  "Got any new eggs hatching?",
+  "I just got a shiny! ✨",
+  "Want to trade?",
+  "My monster just evolved! 🎉",
+  "Lol my carrot rotted 😅",
+  "Need anything? I can help!",
+  "Have you tried the dice battle? It's wild.",
+  "Battle me sometime!",
+];
+
+function addFriend(name) {
+  name = (name || '').trim();
+  if (!name) throw new Error('name required');
+  if (name.length > 20) throw new Error('name too long');
+  state.friends ??= [];
+  if (state.friends.some(f => f.name.toLowerCase() === name.toLowerCase())) {
+    throw new Error(`${name} is already on your friend list`);
+  }
+  const emojis = ['🦊','🐯','🐰','🐻','🐼','🐨','🐸','🦄','🐲','🦁'];
+  const f = {
+    id: uuid(),
+    name,
+    emoji: emojis[Math.floor(Math.random() * emojis.length)],
+    addedAt: Date.now(),
+    isNpc: true,
+  };
+  state.friends.push(f);
+  state.chats ??= {};
+  state.chats[f.id] = [
+    { from: 'them', text: `Hi! I'm ${name}. Glad to be your friend! ${f.emoji}`, at: Date.now() },
+  ];
+  saveState();
+  return f;
+}
+
+function removeFriend(friendId) {
+  state.friends = (state.friends || []).filter(f => f.id !== friendId);
+  if (state.chats) delete state.chats[friendId];
+  saveState();
+}
+
+function sendMessage(friendId, text) {
+  text = (text || '').trim();
+  if (!text) return;
+  if (text.length > 200) throw new Error('message too long');
+  state.chats ??= {};
+  state.chats[friendId] ??= [];
+  state.chats[friendId].push({ from: 'me', text, at: Date.now() });
+
+  // Queue NPC reply for 2–6 seconds later
+  const f = (state.friends || []).find(x => x.id === friendId);
+  if (f?.isNpc) {
+    const lowText = text.toLowerCase();
+    let reply;
+    if (/help|water|plant/.test(lowText)) {
+      // Trigger an auto-water — friend will "water" the player's first growing plot
+      reply = null; // handled below
+    } else if (/hi|hello|hey/.test(lowText)) {
+      reply = `Hey ${state.player.name}! ${f.emoji}`;
+    } else if (/trade/.test(lowText)) {
+      reply = `Trading isn't live yet — soon though! Wanna battle instead?`;
+    } else {
+      reply = NPC_REPLIES[Math.floor(Math.random() * NPC_REPLIES.length)];
+    }
+    const fireAt = Date.now() + 2000 + Math.random() * 4000;
+    state.pendingNpcReplies ??= [];
+    if (reply) {
+      state.pendingNpcReplies.push({ friendId, text: reply, fireAt });
+    } else {
+      // Help request — schedule a water + reply
+      state.pendingNpcReplies.push({ friendId, helpRequest: true, fireAt });
+    }
+  }
+  saveState();
+}
+
+function processNpcReplies() {
+  if (!state.pendingNpcReplies?.length) return false;
+  const now = Date.now();
+  let changed = false;
+  for (let i = state.pendingNpcReplies.length - 1; i >= 0; i--) {
+    const r = state.pendingNpcReplies[i];
+    if (r.fireAt > now) continue;
+
+    if (r.helpRequest) {
+      // NPC tries to water the player's first growing plot
+      const plot = (state.farmPlots || []).find(p => p.seedItemId && !plotIsReady(p));
+      const friend = state.friends.find(f => f.id === r.friendId);
+      if (plot && friend) {
+        const code = generateHelpCode();
+        state.receivedHelpCodes ??= {};
+        state.receivedHelpCodes[code] = {
+          friendName: friend.name,
+          plotIndex: plot.idx,
+          claimed: false,
+          createdAt: now,
+        };
+        state.chats[r.friendId].push({
+          from: 'them',
+          text: `🚿 I watered your plant! Use claim code: ${code} (or tap "Claim help" in your Farm).`,
+          at: now,
+        });
+      } else {
+        state.chats[r.friendId].push({
+          from: 'them',
+          text: `Hmm, you don't have any plants growing right now!`,
+          at: now,
+        });
+      }
+    } else {
+      state.chats[r.friendId].push({ from: 'them', text: r.text, at: now });
+    }
+    state.pendingNpcReplies.splice(i, 1);
+    changed = true;
+  }
+  if (changed) saveState();
+  return changed;
+}
+
+function plotIsReady(plot) {
+  return plot.readyAt && Date.now() >= plot.readyAt;
+}
+
+// ------------------------------------------------------------
+// Plant help — share link + claim code
+// ------------------------------------------------------------
+
+function generateHelpCode() {
+  // Short, easy-to-share alphanumeric code (no ambiguous chars)
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let code = '';
+  for (let i = 0; i < 6; i++) code += chars[Math.floor(Math.random() * chars.length)];
+  return code;
+}
+
+function issueHelpLinkForPlot(plotIdx) {
+  const plot = (state.farmPlots || [])[plotIdx];
+  if (!plot) throw new Error('plot not found');
+  if (!plot.seedItemId) throw new Error('plot is empty — nothing to water');
+  const code = generateHelpCode();
+  state.issuedHelpCodes ??= {};
+  state.issuedHelpCodes[code] = {
+    plotIndex: plotIdx,
+    createdAt: Date.now(),
+  };
+  saveState();
+  const payload = btoa(JSON.stringify({
+    ownerName: state.player.name,
+    code,
+    plotIndex: plotIdx,
+  }));
+  return { code, payload };
+}
+
+/** Friend's side: redeem a help payload to get a claim code to send back. */
+function friendWaterPlant(payload) {
+  const decoded = JSON.parse(atob(payload));
+  return {
+    ownerName: decoded.ownerName,
+    plotIndex: decoded.plotIndex,
+    claimCode: decoded.code,
+  };
+}
+
+/** Player's side: paste a claim code received from a friend → -5 min. */
+function claimHelpCode(code) {
+  code = (code || '').toUpperCase().trim();
+  if (!code) throw new Error('code required');
+
+  // Two paths:
+  //   (a) Code I issued — friend opened my link and is sending it back
+  //   (b) Code my NPC friend "issued" via chat — already stored locally
+  let plotIndex = null;
+  let source = null;
+
+  if (state.issuedHelpCodes?.[code]) {
+    plotIndex = state.issuedHelpCodes[code].plotIndex;
+    delete state.issuedHelpCodes[code];
+    source = 'shared';
+  } else if (state.receivedHelpCodes?.[code] && !state.receivedHelpCodes[code].claimed) {
+    plotIndex = state.receivedHelpCodes[code].plotIndex;
+    state.receivedHelpCodes[code].claimed = true;
+    source = 'npc';
+  } else {
+    throw new Error('invalid or already-claimed code');
+  }
+
+  const plot = (state.farmPlots || [])[plotIndex];
+  if (!plot || !plot.readyAt) throw new Error('plot has been harvested already');
+
+  plot.readyAt -= 5 * 60 * 1000;  // -5 minutes
+  // Also ensure it doesn't go negative-current — clamp to now
+  if (plot.readyAt < Date.now()) plot.readyAt = Date.now();
+  saveState();
+  return { plotIndex, source, minutesOff: 5 };
+}
+
+// ------------------------------------------------------------
 // Admin overrides — edit any catalog value at runtime.
 // ------------------------------------------------------------
 
@@ -967,6 +1199,11 @@ function bootGame() {
     if (!state.eventProgress) state.eventProgress = {};
     if (!state.eventStats) state.eventStats = { spendCoins: 0 };
     if (!state.adminOverrides) state.adminOverrides = { species: {}, items: {}, eggs: {} };
+    if (!state.friends) state.friends = [];
+    if (!state.chats) state.chats = {};
+    if (!state.pendingNpcReplies) state.pendingNpcReplies = [];
+    if (!state.issuedHelpCodes) state.issuedHelpCodes = {};
+    if (!state.receivedHelpCodes) state.receivedHelpCodes = {};
     state.schemaVersion = 2;
     applyAdminOverrides();
     tickDecay();
@@ -997,6 +1234,10 @@ window.game = {
   getActiveEvent, eventProgress, claimEventQuest, claimEventFinalReward,
   // admin
   applyAdminOverrides, setAdminOverride, resetAdminOverrides,
+  // social
+  addFriend, removeFriend, sendMessage, processNpcReplies,
+  // plant help
+  issueHelpLinkForPlot, friendWaterPlant, claimHelpCode,
   // tick
   tickDecay,
 };
