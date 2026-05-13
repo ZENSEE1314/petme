@@ -672,6 +672,58 @@ threw = false;
 try { g.claimHelpCode('NOPE99'); } catch { threw = true; }
 ok(threw, 'invalid code rejected');
 
+section('multi-account login');
+fakeStorage.clear();
+ok(g.listAccounts().length === 0, 'no accounts initially');
+
+// Create first account
+const acctAlice = g.createAccount('Alice');
+ok(acctAlice.id, 'account has id');
+ok(acctAlice.displayName === 'Alice', 'name set');
+ok(acctAlice.isAdmin === true, 'first account is admin');
+ok(g.listAccounts().length === 1, 'account list grew');
+
+// Cannot duplicate name
+threw = false;
+try { g.createAccount('alice'); } catch { threw = true; }
+ok(threw, 'duplicate name (case-insensitive) rejected');
+
+// Create second account — NOT admin by default
+const acctBob = g.createAccount('Bob');
+ok(acctBob.isAdmin === false, 'second account is not admin by default');
+
+// Switch + bootGame + newGame creates Alice's save
+g.switchAccount(acctAlice.id);
+g.newGame('Alice');
+g.state.player.coins = 500;
+g.saveState();
+ok(g.getCurrentAccount().id === acctAlice.id, 'current account is Alice');
+
+// Switch to Bob — Alice's data preserved
+g.switchAccount(acctBob.id);
+ok(g.getCurrentAccount().id === acctBob.id, 'switched to Bob');
+g.bootGame();
+ok(g.state === null, 'Bob has no save yet');
+g.newGame('Bob');
+g.state.player.coins = 123;
+g.saveState();
+
+// Verify alice still has her data
+const aliceSave = g.loadStateForAccount(acctAlice.id);
+ok(aliceSave?.player?.coins === 500, "Alice's save intact after switching");
+const bobSave = g.loadStateForAccount(acctBob.id);
+ok(bobSave?.player?.coins === 123, "Bob's save persisted");
+
+// Sign out clears pointer but keeps saves
+g.signOut();
+ok(g.getCurrentAccount() === null, 'signed out');
+ok(g.listAccounts().length === 2, 'both accounts still listed');
+
+// Delete an account
+g.deleteAccount(acctBob.id);
+ok(g.listAccounts().length === 1, 'account deleted');
+ok(g.loadStateForAccount(acctBob.id) === null, "Bob's save also gone");
+
 // ============================================================
 console.log('\n--------');
 console.log(`${pass} passed, ${fail} failed`);

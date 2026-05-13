@@ -24,8 +24,14 @@ window.addEventListener('DOMContentLoaded', () => {
     return;
   }
 
+  // Boot flow:
+  //   1. No account selected:
+  //        - if there ARE accounts on this device → show Login screen
+  //        - if zero accounts → show Landing page → tap Play → Login (Sign Up tab)
+  //   2. Account selected, save exists → into the app.
   if (!loaded) {
-    showSignUp();
+    if (g.listAccounts().length === 0) showLanding();
+    else showLogin();
   } else {
     showApp();
   }
@@ -60,19 +66,41 @@ window.addEventListener('DOMContentLoaded', () => {
     }
   }, 1000);
 
-  // Wire sign-up form (might not exist on first render but listener is safe)
+  // Wire landing page CTA
+  document.getElementById('landing-play-btn')?.addEventListener('click', () => showLogin('signup'));
+
+  // Wire login screen
+  document.getElementById('login-back-btn')?.addEventListener('click', () => {
+    if (g.listAccounts().length === 0) showLanding();
+    else { document.getElementById('login-screen').style.display = 'none'; showLanding(); }
+  });
+  document.querySelectorAll('.login-tab').forEach(t => {
+    t.addEventListener('click', () => switchLoginTab(t.dataset.loginTab));
+  });
+
+  // Wire signup form
   document.getElementById('sign-up-btn')?.addEventListener('click', handleSignUp);
   document.getElementById('display-name-input')?.addEventListener('keydown', e => {
     if (e.key === 'Enter') handleSignUp();
   });
   document.getElementById('reset-btn')?.addEventListener('click', handleReset);
+
+  // Header logout
+  document.getElementById('hdr-logout')?.addEventListener('click', () => {
+    g.signOut();
+    location.reload();
+  });
 });
 
 function handleSignUp() {
   const input = document.getElementById('display-name-input');
   const name = (input?.value || '').trim() || 'Trainer';
-  g.newGame(name);
-  showApp();
+  try {
+    const acct = g.createAccount(name);
+    g.switchAccount(acct.id);
+    g.newGame(name);
+    showApp();
+  } catch (e) { alert(e.message); }
 }
 
 function handleReset() {
@@ -85,9 +113,83 @@ function handleReset() {
 // Screen switching
 // ------------------------------------------------------------
 
-function showSignUp() {
-  document.getElementById('sign-up-screen').style.display = 'flex';
-  document.getElementById('app').style.display = 'none';
+function hideAllOuterScreens() {
+  ['landing-screen','login-screen','app','sign-up-screen'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = 'none';
+  });
+}
+
+function showLanding() {
+  hideAllOuterScreens();
+  document.getElementById('landing-screen').style.display = 'block';
+}
+
+function showLogin(tab = 'signin') {
+  hideAllOuterScreens();
+  document.getElementById('login-screen').style.display = 'flex';
+  // If there are zero accounts, force signup tab
+  const tabs = document.querySelectorAll('.login-tab');
+  if (g.listAccounts().length === 0) tab = 'signup';
+  switchLoginTab(tab);
+  renderAccountList();
+}
+
+function switchLoginTab(tab) {
+  document.querySelectorAll('.login-tab').forEach(b => {
+    b.classList.toggle('active', b.dataset.loginTab === tab);
+  });
+  document.getElementById('login-signin-panel').style.display = tab === 'signin' ? 'block' : 'none';
+  document.getElementById('login-signup-panel').style.display = tab === 'signup' ? 'block' : 'none';
+}
+
+function renderAccountList() {
+  const root = document.getElementById('account-list');
+  const accounts = g.listAccounts();
+  if (accounts.length === 0) {
+    root.innerHTML = '<p class="muted small">No accounts yet — tap "Sign Up" to create one.</p>';
+    return;
+  }
+  root.innerHTML = accounts.map(a => {
+    const save = g.loadStateForAccount(a.id);
+    const monsters = save?.monsters?.length || 0;
+    const coins = save?.player?.coins || 0;
+    return `
+      <button class="account-row" data-acct-id="${a.id}">
+        <div class="account-avatar">${a.isAdmin ? '👑' : '🦒'}</div>
+        <div class="account-meta">
+          <div class="account-name">${escapeHtml(a.displayName)}${a.isAdmin ? ' <span class="admin-pill">admin</span>' : ''}</div>
+          <div class="account-sub">${monsters} pet${monsters === 1 ? '' : 's'} · 🪙 ${coins}</div>
+        </div>
+        <span class="account-delete" data-acct-delete="${a.id}" title="Delete account">✕</span>
+      </button>
+    `;
+  }).join('');
+
+  root.querySelectorAll('.account-row').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      if (e.target.dataset.acctDelete) return;
+      const id = btn.dataset.acctId;
+      g.switchAccount(id);
+      g.bootGame();
+      showApp();
+    });
+  });
+  root.querySelectorAll('.account-delete').forEach(x => {
+    x.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const id = x.dataset.acctDelete;
+      const acct = g.listAccounts().find(a => a.id === id);
+      if (!acct) return;
+      if (!confirm(`Delete "${acct.displayName}" and their save? This cannot be undone.`)) return;
+      g.deleteAccount(id);
+      renderAccountList();
+    });
+  });
+}
+
+function showSignUp() {  // legacy alias used by some older paths
+  showLogin('signup');
 }
 
 function showApp() {
@@ -1280,6 +1382,24 @@ function renderAdmin() {
     renderAdmin();
   });
 
+  // Account-picker on the Player tab — switch active save
+  const picker = document.getElementById('admin-account-picker');
+  if (picker) {
+    picker.addEventListener('change', () => {
+      const id = picker.value;
+      const acct = g.listAccounts().find(a => a.id === id);
+      if (!acct) return;
+      if (!confirm(`Switch the game to "${acct.displayName}"? Your current edits stay saved on whichever account you were on.`)) {
+        picker.value = g.getCurrentAccount()?.id || '';
+        return;
+      }
+      g.switchAccount(id);
+      g.bootGame();
+      showToast(`Now editing as ${acct.displayName}`);
+      renderActiveScreen();
+    });
+  }
+
   root.querySelectorAll('[data-go]').forEach(b => b.addEventListener('click', () => switchScreen(b.dataset.go)));
 }
 
@@ -1297,9 +1417,25 @@ function renderAdminPlayer() {
   const p = g.state.player;
   const inv = Object.entries(g.state.inventory || {});
   const sortedItems = g.ITEMS.slice().sort((a,b) => a.id - b.id);
+  const accounts = g.listAccounts();
+  const currentAcct = g.getCurrentAccount();
 
   return `
     <p class="admin-table-hint">Tweak your player stats, currencies, and inventory directly. Empty an item's qty to remove it.</p>
+
+    ${accounts.length > 1 ? `
+      <div class="admin-account-switcher">
+        <label class="muted small">📁 Edit save for account:</label>
+        <select id="admin-account-picker">
+          ${accounts.map(a => `
+            <option value="${a.id}" ${a.id === currentAcct?.id ? 'selected' : ''}>
+              ${escapeHtml(a.displayName)}${a.isAdmin ? ' (admin)' : ''}
+            </option>
+          `).join('')}
+        </select>
+        <span class="muted small">Switches the whole game to that account's save.</span>
+      </div>
+    ` : `<p class="muted small">Only one account exists in this browser. Sign out and sign up again to create more accounts.</p>`}
 
     <h3 class="admin-section-title">👤 Player</h3>
     <table class="admin-table">

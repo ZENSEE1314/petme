@@ -11,22 +11,88 @@
 </head>
 <body>
 
-  <!-- Sign-up screen -->
-  <div id="sign-up-screen">
-    <div class="sign-up-emoji">🦒</div>
-    <h1>Smooth Giraffe</h1>
-    <p class="tagline">Hatch · Raise · Battle · Collect</p>
-    <div class="form-card">
-      <p style="margin: 0 0 12px; font-weight: 700;">What should we call you?</p>
-      <input id="display-name-input" type="text" placeholder="Trainer name" maxlength="20" autocomplete="off">
-      <button id="sign-up-btn">Start playing →</button>
-    </div>
-    <p class="muted small" style="margin-top: 24px; max-width: 320px;">
-      Browser prototype — saves to this device only.
-      All systems from the master plan are here: care loop, 30-pet dex,
-      egg gacha with pity, 4 currencies, async battle.
-    </p>
+  <!-- Landing / intro page (shown when no account is logged in) -->
+  <div id="landing-screen">
+    <header class="landing-hero">
+      <div class="landing-logo">🦒</div>
+      <h1 class="landing-title">Smooth Giraffe</h1>
+      <p class="landing-tagline">Hatch · Raise · Battle · Collect</p>
+      <p class="landing-sub">A 3D-feeling chibi pet game in your browser. No downloads, no installs.</p>
+      <button id="landing-play-btn" class="big-btn landing-cta">▶ Play Now</button>
+    </header>
+
+    <section class="landing-features">
+      <h2 class="landing-section-title">What's inside</h2>
+      <div class="feature-grid">
+        <div class="feature-card">
+          <div class="feature-emoji">🥚</div>
+          <h3>Hatch the dex</h3>
+          <p>30 chibi pets across 6 rarities. Egg gacha with pity, daily caps, and shiny variants.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-emoji">🍖</div>
+          <h3>Care loop</h3>
+          <p>Real-time hunger, cleanliness, energy. Sleep, feed, clean, play, train.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-emoji">🌱</div>
+          <h3>Farm</h3>
+          <p>Plant seeds, water, harvest. Crops feed your pets or sell for coins.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-emoji">🎲</div>
+          <h3>Dice battle</h3>
+          <p>Roll a die each turn. Damage = roll × ATK − DEF. Trophy ladder.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-emoji">👥</div>
+          <h3>Friends + chat</h3>
+          <p>Add friends, chat, share watering links. NPC friends auto-help.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-emoji">⚙️</div>
+          <h3>Live admin</h3>
+          <p>Edit any pet stat, seed time, item price, or your own currencies on the fly.</p>
+        </div>
+      </div>
+    </section>
+
+    <footer class="landing-footer">
+      <p class="muted small">Browser prototype · Saves to this device · Free to play</p>
+      <p class="muted small">
+        <a href="https://github.com/ZENSEE1314/petme" target="_blank" rel="noopener">View on GitHub</a>
+      </p>
+    </footer>
   </div>
+
+  <!-- Login / signup screen -->
+  <div id="login-screen">
+    <div class="login-card">
+      <button class="back-btn" id="login-back-btn">← Back</button>
+      <div class="login-emoji">🦒</div>
+      <h1 class="login-title">Welcome back!</h1>
+      <p class="muted small center">Saves are stored in this browser. Pick an existing account or create a new one.</p>
+
+      <div class="login-tabs">
+        <button class="login-tab active" data-login-tab="signin">Sign In</button>
+        <button class="login-tab" data-login-tab="signup">Sign Up</button>
+      </div>
+
+      <div id="login-signin-panel" class="login-panel">
+        <p class="muted small">Choose an account on this device:</p>
+        <div id="account-list" class="account-list"></div>
+      </div>
+
+      <div id="login-signup-panel" class="login-panel" style="display:none">
+        <p style="margin-bottom: 12px; font-weight: 700;">Pick a display name</p>
+        <input id="display-name-input" type="text" placeholder="Trainer name" maxlength="20" autocomplete="off">
+        <button id="sign-up-btn" class="big-btn" style="margin-top:8px">Create account →</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Legacy reference — kept as a hidden div in case any older code paths reference it -->
+  <div id="sign-up-screen" style="display:none"></div>
 
   <!-- Main app -->
   <div id="app">
@@ -36,6 +102,7 @@
         <span class="stat">🪙 <span id="hdr-coins">0</span></span>
         <span class="stat">💎 <span id="hdr-gems">0</span></span>
         <button id="hdr-admin" class="hdr-admin-btn" title="Admin panel — edit all game values">⚙️</button>
+        <button id="hdr-logout" class="hdr-admin-btn" title="Sign out (keeps your save)">🚪</button>
       </div>
       <div class="hdr-row" style="margin-top: 6px;">
         <span class="stat">✨ <span id="hdr-stardust">0</span></span>

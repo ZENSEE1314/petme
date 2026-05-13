@@ -6,7 +6,105 @@
 
 'use strict';
 
-const SAVE_KEY = 'smooth-giraffe-save-v1';
+// ------------------------------------------------------------
+// Accounts — multiple save slots stored in localStorage.
+// Each account has its own "save key" so saves don't collide.
+//
+//   accounts list :  localStorage['smooth-giraffe-accounts']
+//                    [{ id, displayName, createdAt, isAdmin }]
+//   current acct  :  localStorage['smooth-giraffe-current']
+//                    "<account-id>"  or absent
+//   per-acct save :  localStorage['smooth-giraffe-save-v1:<account-id>']
+//                    serialized game state for that account
+//
+// Old saves stored at the unsuffixed 'smooth-giraffe-save-v1' key
+// are migrated into a default account on first boot.
+// ------------------------------------------------------------
+
+const ACCOUNTS_KEY        = 'smooth-giraffe-accounts';
+const CURRENT_ACCOUNT_KEY = 'smooth-giraffe-current';
+const SAVE_KEY_PREFIX     = 'smooth-giraffe-save-v1';
+const LEGACY_SAVE_KEY     = 'smooth-giraffe-save-v1';      // legacy unsuffixed
+let currentAccountId      = null;
+
+function listAccounts() {
+  try {
+    const raw = localStorage.getItem(ACCOUNTS_KEY);
+    if (!raw) return [];
+    return JSON.parse(raw);
+  } catch { return []; }
+}
+
+function saveAccountsList(list) {
+  localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(list));
+}
+
+function getCurrentAccount() {
+  if (!currentAccountId) return null;
+  return listAccounts().find(a => a.id === currentAccountId) || null;
+}
+
+function setCurrentAccount(accountId) {
+  currentAccountId = accountId;
+  if (accountId) localStorage.setItem(CURRENT_ACCOUNT_KEY, accountId);
+  else           localStorage.removeItem(CURRENT_ACCOUNT_KEY);
+}
+
+function createAccount(displayName, opts = {}) {
+  displayName = (displayName || '').trim();
+  if (!displayName) throw new Error('display name required');
+  if (displayName.length > 20) throw new Error('display name too long (20 max)');
+  const accounts = listAccounts();
+  if (accounts.some(a => a.displayName.toLowerCase() === displayName.toLowerCase())) {
+    throw new Error(`an account named "${displayName}" already exists in this browser`);
+  }
+  const acct = {
+    id: uuid(),
+    displayName,
+    createdAt: Date.now(),
+    // First-ever account is auto-admin (so you can edit your own game).
+    isAdmin: opts.isAdmin ?? (accounts.length === 0),
+  };
+  accounts.push(acct);
+  saveAccountsList(accounts);
+  return acct;
+}
+
+function deleteAccount(accountId) {
+  const accounts = listAccounts().filter(a => a.id !== accountId);
+  saveAccountsList(accounts);
+  localStorage.removeItem(saveKeyFor(accountId));
+  if (currentAccountId === accountId) setCurrentAccount(null);
+}
+
+function saveKeyFor(accountId) {
+  return `${SAVE_KEY_PREFIX}:${accountId}`;
+}
+
+function migrateLegacySave() {
+  // If accounts list is empty AND legacy save exists, lift it into a default account.
+  if (listAccounts().length > 0) return;
+  const legacy = localStorage.getItem(LEGACY_SAVE_KEY);
+  if (!legacy) return;
+  try {
+    const parsed = JSON.parse(legacy);
+    const acct = createAccount(parsed?.player?.name || 'Trainer', { isAdmin: true });
+    localStorage.setItem(saveKeyFor(acct.id), legacy);
+    localStorage.removeItem(LEGACY_SAVE_KEY);
+    setCurrentAccount(acct.id);
+  } catch (e) {
+    console.error('legacy save migration failed:', e);
+  }
+}
+
+// Resolve the current save key (per-account when logged in, legacy otherwise).
+function getSaveKey() {
+  if (!currentAccountId) currentAccountId = localStorage.getItem(CURRENT_ACCOUNT_KEY);
+  return currentAccountId ? saveKeyFor(currentAccountId) : LEGACY_SAVE_KEY;
+}
+
+// Legacy constant kept for any test code referencing it.
+const SAVE_KEY = LEGACY_SAVE_KEY;
 const SPECIES_BY_ID = Object.fromEntries(SPECIES.map(s => [s.id, s]));
 const EGG_BY_ID = Object.fromEntries(EGG_TYPES.map(e => [e.id, e]));
 const ITEM_BY_ID = Object.fromEntries(ITEMS.map(i => [i.id, i]));
@@ -86,7 +184,7 @@ function defaultState() {
 
 function loadState() {
   try {
-    const raw = localStorage.getItem(SAVE_KEY);
+    const raw = localStorage.getItem(getSaveKey());
     if (!raw) return null;
     return JSON.parse(raw);
   } catch (e) {
@@ -97,10 +195,18 @@ function loadState() {
 
 function saveState() {
   try {
-    localStorage.setItem(SAVE_KEY, JSON.stringify(state));
+    localStorage.setItem(getSaveKey(), JSON.stringify(state));
   } catch (e) {
     console.error('saveState failed:', e);
   }
+}
+
+/** Load the save for a specific account ID (admin "view as" mode). */
+function loadStateForAccount(accountId) {
+  try {
+    const raw = localStorage.getItem(saveKeyFor(accountId));
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
 }
 
 function newGame(displayName) {
@@ -114,7 +220,21 @@ function hasSave() {
 }
 
 function resetGame() {
-  localStorage.removeItem(SAVE_KEY);
+  localStorage.removeItem(getSaveKey());
+  state = null;
+}
+
+/** Switch the active account. Subsequent load/save target that account's slot. */
+function switchAccount(accountId) {
+  const acct = listAccounts().find(a => a.id === accountId);
+  if (!acct) throw new Error('account not found');
+  setCurrentAccount(accountId);
+  state = null;   // force a fresh load on next bootGame()
+}
+
+/** Sign out — clears the current pointer but keeps all save slots intact. */
+function signOut() {
+  setCurrentAccount(null);
   state = null;
 }
 
@@ -1241,6 +1361,20 @@ function resetAdminOverrides() {
 // ------------------------------------------------------------
 
 function bootGame() {
+  // Run one-time migration of legacy single-save data into the first account
+  migrateLegacySave();
+  // Restore the current-account pointer from localStorage
+  currentAccountId = localStorage.getItem(CURRENT_ACCOUNT_KEY);
+  // If pointer is stale (account was deleted), drop it
+  if (currentAccountId && !listAccounts().find(a => a.id === currentAccountId)) {
+    setCurrentAccount(null);
+  }
+  // Bail early if no account selected — caller will show the login screen
+  if (!currentAccountId) {
+    state = null;
+    return false;
+  }
+
   const loaded = loadState();
   if (loaded) {
     state = loaded;
@@ -1290,6 +1424,9 @@ window.game = {
   TRAINING_DEFS, TRAINING_CONFIG, EVENTS,
   // lifecycle
   bootGame, hasSave, newGame, resetGame, saveState, loadState,
+  // accounts (multi-save in same browser)
+  listAccounts, getCurrentAccount, createAccount, deleteAccount,
+  switchAccount, signOut, loadStateForAccount,
   // pet
   claimStarter, getActivePet, setActivePet, useItem, sleepPet, isSleeping, secondsToNextEnergyPoint, playWithPet, petPet,
   // shop / eggs
