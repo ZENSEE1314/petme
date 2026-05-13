@@ -1,5 +1,8 @@
 # Deploy to Railway
 
+> ✅ **Live at https://smooth-giraffe-production.up.railway.app/**
+> Service is connected to this GitHub repo on `main` — every push auto-deploys.
+
 The browser game is configured to deploy to Railway as a tiny Node static-file server. Zero npm dependencies — the entire server is one file (`web-game/server.js`) using Node's built-in `http` module.
 
 ## Two paths
