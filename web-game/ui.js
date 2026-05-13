@@ -122,7 +122,7 @@ function hideAllOuterScreens() {
 
 function showLanding() {
   hideAllOuterScreens();
-  document.getElementById('landing-screen').style.display = 'block';
+  document.getElementById('landing-screen').style.display = 'flex';
 }
 
 function showLogin(tab = 'signin') {
