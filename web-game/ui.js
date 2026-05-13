@@ -187,10 +187,23 @@ function renderHome() {
   const mood = pet.mood;
   const moodFace = mood > 70 ? '😊' : mood > 40 ? '😐' : '😢';
 
-  // Inventory chips
-  const foods    = Object.entries(g.state.inventory).filter(([id]) => g.ITEM_BY_ID[id]?.type === 'food');
-  const meds     = Object.entries(g.state.inventory).filter(([id]) => g.ITEM_BY_ID[id]?.type === 'medicine');
-  const toys     = Object.entries(g.state.inventory).filter(([id]) => g.ITEM_BY_ID[id]?.type === 'toy');
+  // Inventory chips — group items by what they DO, not by raw type,
+  // so harvested crops appear next to shop-bought food.
+  // Rules:
+  //   Feed   = any 'food' or 'crop' item (crops are always edible)
+  //   Clean  = any item with cleanliness effect
+  //   Energy = any item with energy effect (e.g. Energy Drink)
+  //   Toys   = type 'toy'
+  // An item can appear in multiple groups if it heals multiple needs.
+  const inv = Object.entries(g.state.inventory);
+  const hasEffect = (id, key) => (g.ITEM_BY_ID[id]?.effect?.[key] ?? 0) > 0;
+  const foods   = inv.filter(([id]) => {
+    const t = g.ITEM_BY_ID[id]?.type;
+    return t === 'food' || t === 'crop' || hasEffect(id, 'hunger');
+  });
+  const cleans  = inv.filter(([id]) => hasEffect(id, 'cleanliness'));
+  const energys = inv.filter(([id]) => hasEffect(id, 'energy'));
+  const toys    = inv.filter(([id]) => g.ITEM_BY_ID[id]?.type === 'toy');
 
   const activeEvent = g.getActiveEvent();
   const allQuestsDone = activeEvent && activeEvent.quests.every(q =>
@@ -236,9 +249,10 @@ function renderHome() {
     ${g.isSleeping(pet) ? renderSleepStatus(pet) : ''}
 
     <div class="actions-grid">
-      ${actionGroup('Feed', foods, 'food')}
-      ${actionGroup('Clean', meds.filter(([id]) => g.ITEM_BY_ID[id].effect.cleanliness), 'med')}
-      ${actionGroup('Play', toys, 'toy')}
+      ${actionGroup('🍖 Feed',   foods,   'food')}
+      ${actionGroup('🧼 Clean',  cleans,  'clean')}
+      ${actionGroup('⚡ Energy', energys, 'energy')}
+      ${actionGroup('🧸 Toys',   toys,    'toy')}
       <button class="action-btn solo ${g.isSleeping(pet) ? 'sleeping' : ''}" id="sleep-btn">
         ${g.isSleeping(pet) ? '⏰ Wake up' : '😴 Sleep'}
         <span class="action-sub">${g.isSleeping(pet) ? 'tap to end' : '+1 Energy / 10 min'}</span>
