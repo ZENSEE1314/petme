@@ -395,6 +395,15 @@ function renderPlot(plot) {
   `;
 }
 
+/** Debounce: returns a wrapper that calls `fn` only after `ms` of inactivity. */
+function debounce(fn, ms) {
+  let t = null;
+  return function (...args) {
+    clearTimeout(t);
+    t = setTimeout(() => fn.apply(this, args), ms);
+  };
+}
+
 /** DD:HH:MM:SS clock format. Always 4 fields, 2 digits each. */
 function formatDuration(sec) {
   sec = Math.max(0, Math.ceil(sec));
@@ -1027,21 +1036,52 @@ function renderAdmin() {
     });
   });
 
-  // Cell editing — change event triggers override save
+  // Cell editing — save on EVERY keystroke (debounced) so a fast
+  // refresh before blurring still persists the edit.
+  // `change` fires only on blur, which used to drop edits if user hit
+  // F5 while still focused on the cell.
+  const saveAdminCell = (inp) => {
+    const { category, id, field } = inp.dataset;
+    if (!category || !id || !field) return;
+    try {
+      g.setAdminOverride(category, id, { [field]: inp.value });
+      flashCell(inp);
+      if (field === 'growSeconds' || field === 'hatchSeconds') {
+        const pretty = inp.closest('tr')?.querySelector('.admin-cell-pretty');
+        if (pretty) pretty.textContent = formatDuration(Number(inp.value));
+      }
+    } catch (e) { alert(e.message); }
+  };
+  const debouncedSave = debounce(saveAdminCell, 350);
+
   root.querySelectorAll('.admin-input').forEach(inp => {
-    inp.addEventListener('change', () => {
-      const { category, id, field } = inp.dataset;
-      try {
-        g.setAdminOverride(category, id, { [field]: inp.value });
-        flashCell(inp);
-        // Live-refresh adjacent DD:HH:MM:SS preview if user edited a timer field
-        if (field === 'growSeconds' || field === 'hatchSeconds') {
-          const pretty = inp.closest('tr')?.querySelector('.admin-cell-pretty');
-          if (pretty) pretty.textContent = formatDuration(Number(inp.value));
-        }
-      } catch (e) { alert(e.message); }
-    });
+    // Fires on every keystroke / select change. Debounced so we
+    // don't hammer localStorage 5 times while typing "99999".
+    inp.addEventListener('input',  () => debouncedSave(inp));
+    // Fires on blur / Enter — also save IMMEDIATELY so the green
+    // flash is responsive when user commits an edit deliberately.
+    inp.addEventListener('change', () => saveAdminCell(inp));
   });
+
+  // Safety net: if user navigates away (F5, close tab, back-button)
+  // while still focused on an admin input, flush their pending edit.
+  if (!window.__adminFlushHooked) {
+    window.__adminFlushHooked = true;
+    const flushFocused = () => {
+      const ae = document.activeElement;
+      if (ae && ae.classList?.contains('admin-input') && ae.dataset.category) {
+        const { category, id, field } = ae.dataset;
+        try { g.setAdminOverride(category, id, { [field]: ae.value }); }
+        catch {}
+      }
+    };
+    window.addEventListener('beforeunload', flushFocused);
+    window.addEventListener('pagehide',     flushFocused);
+    // visibilitychange catches mobile-app-switch / tab-switch cases
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') flushFocused();
+    });
+  }
 
   document.getElementById('admin-reset').addEventListener('click', () => {
     if (!confirm('Reset all admin overrides? All pets/seeds/items/eggs return to defaults. Save data is kept.')) return;
