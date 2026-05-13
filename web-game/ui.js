@@ -487,6 +487,19 @@ function debounce(fn, ms) {
   };
 }
 
+/**
+ * Human-readable duration like "30 minutes", "2 hours", "3 days".
+ * Used in shop displays where DD:HH:MM:SS is too dense.
+ */
+function formatHumanDuration(sec) {
+  sec = Math.max(0, Math.floor(sec));
+  if (sec < 60)    return `${sec} second${sec === 1 ? '' : 's'}`;
+  if (sec < 3600)  { const m = Math.round(sec / 60); return `${m} minute${m === 1 ? '' : 's'}`; }
+  if (sec < 86400) { const h = Math.round(sec / 3600); return `${h} hour${h === 1 ? '' : 's'}`; }
+  const d = Math.round(sec / 86400);
+  return `${d} day${d === 1 ? '' : 's'}`;
+}
+
 /** DD:HH:MM:SS clock format. Always 4 fields, 2 digits each. */
 function formatDuration(sec) {
   sec = Math.max(0, Math.ceil(sec));
@@ -534,26 +547,53 @@ function showPlantPicker(plotIdx, seeds) {
 // Training
 // ------------------------------------------------------------
 
+let trainingPetId = null;  // currently-selected pet for training
+
 function renderTraining() {
   const root = document.getElementById('screen-training');
-  const pet = g.getActivePet();
-  if (!pet) { root.innerHTML = '<p class="muted center">No active pet.</p>'; return; }
+  const monsters = g.state.monsters || [];
+  if (monsters.length === 0) { root.innerHTML = '<p class="muted center">No pets yet — hatch one first!</p>'; return; }
+
+  // Pick a default training pet if none selected (or if the previous one was traded/lost)
+  if (!trainingPetId || !monsters.find(m => m.id === trainingPetId)) {
+    trainingPetId = g.state.activePetId || monsters[0].id;
+  }
+  const pet = monsters.find(m => m.id === trainingPetId);
+  const sp  = g.species(pet.speciesId);
   const now = Date.now();
 
   root.innerHTML = `
     <button class="back-btn" data-go="home">← Home</button>
     <h2 class="screen-title">💪 Training</h2>
-    <p class="screen-sub">Tap as fast as you can for 5 seconds — gain a permanent stat boost. Costs 10 energy.</p>
+    <p class="screen-sub">Choose which pet to train, then tap as fast as you can for 5 seconds. Each session costs ${g.TRAINING_CONFIG.energyCost} energy.</p>
+
+    <div class="train-pet-picker">
+      <div class="pet-picker-label">Train who?</div>
+      <div class="pet-picker-grid">
+        ${monsters.map(m => {
+          const s = g.species(m.speciesId);
+          const r = g.RARITY[s.rarity];
+          const active = m.id === trainingPetId;
+          return `
+            <button class="train-pet-chip ${active ? 'active' : ''}" data-train-pet="${m.id}" style="border-color:${r.color}">
+              <span class="train-pet-chip-emoji">${s.emoji}${m.isShiny ? '✨' : ''}</span>
+              <span class="train-pet-chip-name">${s.name}</span>
+              <span class="train-pet-chip-energy">⚡ ${Math.floor(m.energy)}</span>
+            </button>
+          `;
+        }).join('')}
+      </div>
+    </div>
 
     <div class="train-pet-info">
-      <span class="train-pet-emoji">${g.species(pet.speciesId).emoji}</span>
+      <span class="train-pet-emoji">${sp.emoji}</span>
       <span class="train-pet-stats">ATK ${pet.atk} · DEF ${pet.def} · SPD ${pet.spd} · INT ${pet.intl}</span>
-      <span class="train-pet-energy">⚡ Energy ${pet.energy}</span>
+      <span class="train-pet-energy">⚡ Energy ${Math.floor(pet.energy)}</span>
     </div>
 
     <div class="train-grid">
       ${g.TRAINING_DEFS.map(t => {
-        const cd = g.state.trainCooldowns[t.stat] || 0;
+        const cd = g.state.trainCooldowns?.[pet.id]?.[t.stat] || 0;
         const cdLeft = Math.max(0, Math.ceil((cd - now)/1000));
         const ready = cdLeft === 0 && pet.energy >= g.TRAINING_CONFIG.energyCost;
         return `
@@ -568,11 +608,17 @@ function renderTraining() {
     </div>
   `;
 
+  root.querySelectorAll('.train-pet-chip').forEach(btn => {
+    btn.addEventListener('click', () => {
+      trainingPetId = btn.dataset.trainPet;
+      renderTraining();
+    });
+  });
   root.querySelectorAll('.train-card').forEach(btn => {
     btn.addEventListener('click', () => {
       try {
-        const def = g.startTraining(btn.dataset.stat);
-        showTrainingModal(def);
+        const { def, pet: trainee } = g.startTraining(btn.dataset.stat, trainingPetId);
+        showTrainingModal(def, trainee.id);
       } catch (e) { alert(e.message); }
     });
   });
@@ -581,7 +627,7 @@ function renderTraining() {
   });
 }
 
-function showTrainingModal(def) {
+function showTrainingModal(def, monsterId) {
   const modal = document.createElement('div');
   modal.className = 'modal';
   const dur = g.TRAINING_CONFIG.durationSeconds;
@@ -623,7 +669,7 @@ function showTrainingModal(def) {
 
   function finishMinigame() {
     tapBtn.disabled = true;
-    const result = g.finishTraining(def.stat, taps);
+    const result = g.finishTraining(def.stat, taps, monsterId);
     modal.querySelector('.modal-title').textContent = result.gain > 0
       ? `+${result.gain} ${def.stat.toUpperCase()}!`
       : 'Not enough taps — try again.';
@@ -904,9 +950,32 @@ function renderShop() {
       ).join(' ')}
     </div>
 
+    <h3 class="shop-section-title">🌱 Seeds</h3>
+    <div class="shop-grid">
+      ${g.ITEMS.filter(i => i.type === 'seed').map(i => {
+        const prices = g.itemAvailablePrices(i);
+        const growSec  = i.effect?.grow_seconds || 0;
+        const cropEmoji = g.ITEM_BY_ID[i.effect?.crop_item]?.emoji || '🌾';
+        const cropName  = g.ITEM_BY_ID[i.effect?.crop_item]?.name  || 'crop';
+        return `
+          <div class="shop-card">
+            <div class="shop-emoji">${i.emoji}</div>
+            <div class="shop-name">${i.name}</div>
+            <div class="shop-effect">⏱️ ${formatHumanDuration(growSec)} → ${cropEmoji} ${cropName}</div>
+            <div class="buy-options">
+              ${prices.length === 0
+                ? '<button class="buy-item-btn" disabled>not for sale</button>'
+                : prices.map(p => `<button class="buy-item-btn" data-item="${i.id}" data-currency="${p.currency}">${currencyEmoji(p.currency)} ${p.amount}</button>`).join('')
+              }
+            </div>
+          </div>
+        `;
+      }).join('')}
+    </div>
+
     <h3 class="shop-section-title">🛍️ Items</h3>
     <div class="shop-grid">
-      ${g.ITEMS.filter(i => i.type !== 'crop').map(i => {
+      ${g.ITEMS.filter(i => i.type !== 'crop' && i.type !== 'seed').map(i => {
         const prices = g.itemAvailablePrices(i);
         return `
           <div class="shop-card">
@@ -1117,12 +1186,13 @@ function renderAdmin() {
     <p class="screen-sub">Edit any catalog value live. Changes persist in your save and apply immediately.</p>
 
     <div class="admin-tabs">
-      ${['pets','seeds','items','eggs'].map(t => `
+      ${['player','pets','seeds','items','eggs'].map(t => `
         <button class="admin-tab ${adminTab === t ? 'active' : ''}" data-admin-tab="${t}">${tabIcon(t)} ${t}</button>
       `).join('')}
     </div>
 
     <div class="admin-table-wrap">
+      ${adminTab === 'player'? renderAdminPlayer(): ''}
       ${adminTab === 'pets'  ? renderAdminPets()  : ''}
       ${adminTab === 'seeds' ? renderAdminSeeds() : ''}
       ${adminTab === 'items' ? renderAdminItems() : ''}
@@ -1148,14 +1218,25 @@ function renderAdmin() {
   // F5 while still focused on the cell.
   const saveAdminCell = (inp) => {
     const { category, id, field } = inp.dataset;
-    if (!category || !id || !field) return;
+    if (!field) return;
     try {
-      g.setAdminOverride(category, id, { [field]: inp.value });
+      // "player" category bypasses the override layer — direct state edits
+      if (category === 'player') {
+        g.setPlayerField(field, inp.value);
+      } else if (category === 'inventory') {
+        g.setInventoryQty(field, inp.value);
+      } else if (category) {
+        g.setAdminOverride(category, id, { [field]: inp.value });
+      } else {
+        return;
+      }
       flashCell(inp);
       if (field === 'growSeconds' || field === 'hatchSeconds') {
         const pretty = inp.closest('tr')?.querySelector('.admin-cell-pretty');
         if (pretty) pretty.textContent = formatDuration(Number(inp.value));
       }
+      // Player edits affect the header currency display — refresh it
+      if (category === 'player') renderHeader();
     } catch (e) { alert(e.message); }
   };
   const debouncedSave = debounce(saveAdminCell, 350);
@@ -1175,10 +1256,13 @@ function renderAdmin() {
     window.__adminFlushHooked = true;
     const flushFocused = () => {
       const ae = document.activeElement;
-      if (ae && ae.classList?.contains('admin-input') && ae.dataset.category) {
+      if (ae && ae.classList?.contains('admin-input') && ae.dataset.field) {
         const { category, id, field } = ae.dataset;
-        try { g.setAdminOverride(category, id, { [field]: ae.value }); }
-        catch {}
+        try {
+          if (category === 'player')         g.setPlayerField(field, ae.value);
+          else if (category === 'inventory') g.setInventoryQty(field, ae.value);
+          else if (category)                 g.setAdminOverride(category, id, { [field]: ae.value });
+        } catch {}
       }
     };
     window.addEventListener('beforeunload', flushFocused);
@@ -1200,13 +1284,57 @@ function renderAdmin() {
 }
 
 function tabIcon(t) {
-  return { pets: '🦒', seeds: '🌱', items: '🛍️', eggs: '🥚' }[t] || '⚙️';
+  return { player: '👤', pets: '🦒', seeds: '🌱', items: '🛍️', eggs: '🥚' }[t] || '⚙️';
 }
 
 function flashCell(inp) {
   inp.style.transition = 'background-color 0.4s';
   inp.style.backgroundColor = '#bbf7d0';
   setTimeout(() => inp.style.backgroundColor = '', 600);
+}
+
+function renderAdminPlayer() {
+  const p = g.state.player;
+  const inv = Object.entries(g.state.inventory || {});
+  const sortedItems = g.ITEMS.slice().sort((a,b) => a.id - b.id);
+
+  return `
+    <p class="admin-table-hint">Tweak your player stats, currencies, and inventory directly. Empty an item's qty to remove it.</p>
+
+    <h3 class="admin-section-title">👤 Player</h3>
+    <table class="admin-table">
+      <thead><tr><th>Field</th><th>Value</th></tr></thead>
+      <tbody>
+        <tr><td>Name</td>     <td><input class="admin-input" data-category="player" data-field="name" value="${escapeHtml(p.name)}"></td></tr>
+        <tr><td>🪙 Coins</td>  <td><input class="admin-input num" type="number" data-category="player" data-field="coins"     value="${p.coins}"></td></tr>
+        <tr><td>💎 Gems</td>   <td><input class="admin-input num" type="number" data-category="player" data-field="gems"      value="${p.gems}"></td></tr>
+        <tr><td>✨ Stardust</td><td><input class="admin-input num" type="number" data-category="player" data-field="stardust"  value="${p.stardust}"></td></tr>
+        <tr><td>🎟️ Tickets</td><td><input class="admin-input num" type="number" data-category="player" data-field="tickets"   value="${p.tickets}"></td></tr>
+        <tr><td>🏆 Trophies</td><td><input class="admin-input num" type="number" data-category="player" data-field="trophies" value="${p.trophies}"></td></tr>
+        <tr><td>🧩 Fragments</td><td><input class="admin-input num" type="number" data-category="player" data-field="fragments" value="${p.fragments || 0}"></td></tr>
+      </tbody>
+    </table>
+
+    <h3 class="admin-section-title">🎒 Inventory</h3>
+    <p class="admin-table-hint">Set quantity for any item. 0 removes it. Items not in your inventory show as 0 — type a number to add them.</p>
+    <table class="admin-table">
+      <thead><tr><th>#</th><th>Emoji</th><th>Name</th><th>Type</th><th>Quantity</th></tr></thead>
+      <tbody>
+        ${sortedItems.map(it => {
+          const qty = g.state.inventory?.[it.id] || 0;
+          return `
+            <tr>
+              <td>${it.id}</td>
+              <td>${it.emoji}</td>
+              <td>${escapeHtml(it.name)}</td>
+              <td><span class="muted small">${it.type}</span></td>
+              <td><input class="admin-input num" type="number" min="0" data-category="inventory" data-field="${it.id}" value="${qty}"></td>
+            </tr>
+          `;
+        }).join('')}
+      </tbody>
+    </table>
+  `;
 }
 
 function renderAdminPets() {

@@ -229,6 +229,17 @@ function recomputeMood(monster) {
   monster.mood = clamp(Math.round((monster.mood + derived) / 2), 0, 100);
 }
 
+// Energy cost per action type (consumed when applying item or interaction).
+const ENERGY_COST = {
+  pet:    1,    // free 🤚 button
+  play:   8,    // free 🎾 button
+  toy:    5,    // using a toy item
+  food:   0,    // eating doesn't cost energy
+  crop:   0,
+  medicine: 2,  // bathing / soap / etc.
+  evolution_stone: 0,
+};
+
 function useItem(itemId) {
   const item = ITEM_BY_ID[itemId];
   if (!item) throw new Error('unknown item');
@@ -236,9 +247,18 @@ function useItem(itemId) {
   const pet = getActivePet();
   if (!pet) throw new Error('no active pet');
 
+  // Energy gating by item type
+  const energyCost = ENERGY_COST[item.type] ?? 0;
+  if (energyCost > 0 && pet.energy < energyCost) {
+    throw new Error(`needs ${energyCost} energy — let your pet rest`);
+  }
+
   state.inventory[itemId]--;
   if (state.inventory[itemId] <= 0) delete state.inventory[itemId];
+
   applyEffect(pet, item.effect);
+  if (energyCost > 0) pet.energy = Math.max(0, pet.energy - energyCost);
+
   saveState();
   return { item, pet };
 }
@@ -286,10 +306,12 @@ function playWithPet() {
   return pet;
 }
 
-function petPet() {  // free interaction, tiny mood boost
+function petPet() {  // free interaction, tiny mood boost — costs 1 energy
   const pet = getActivePet();
   if (!pet) throw new Error('no active pet');
+  if (pet.energy < ENERGY_COST.pet) throw new Error('needs energy — let your pet rest');
   applyEffect(pet, { mood: 2 });
+  pet.energy = Math.max(0, pet.energy - ENERGY_COST.pet);
   saveState();
   return pet;
 }
@@ -304,16 +326,17 @@ function tickDecay() {
   if (minutesElapsed < 0.01) return;   // <0.6s — skip
 
   for (const m of state.monsters) {
-    // Hunger + cleanliness always decay (pet ages whether awake or asleep)
+    // Hunger + cleanliness still decay over real time.
     m.hunger      = clamp(m.hunger      - CONFIG.hungerDecayPerMin      * minutesElapsed, 0, 100);
     m.cleanliness = clamp(m.cleanliness - CONFIG.cleanlinessDecayPerMin * minutesElapsed, 0, 100);
 
-    // Energy: gain while sleeping, decay while awake
+    // Energy:
+    //   - Gains while sleeping (+1 per 10 min real time).
+    //   - Does NOT decay over time when awake — only player actions
+    //     (training / petting / playing / cleaning / toys) consume it.
     if (m.sleepingSince) {
       m.energy = clamp(m.energy + CONFIG.sleepEnergyGainPerMin * minutesElapsed, 0, 100);
       if (m.energy >= 100) m.sleepingSince = null;   // auto-wake at full
-    } else {
-      m.energy = clamp(m.energy - CONFIG.energyDecayPerMin * minutesElapsed, 0, 100);
     }
 
     recomputeMood(m);
@@ -777,31 +800,43 @@ function sellCrop(itemId, qty) {
 // Training — click-spam mini-game per stat
 // ------------------------------------------------------------
 
-function startTraining(stat) {
+/**
+ * Cooldowns are now per-monster-per-stat:
+ *   state.trainCooldowns[monsterId][stat] = unixMs when next training is allowed.
+ * Older saves with the flat `state.trainCooldowns[stat]` shape are migrated
+ * to the active pet's row on first boot.
+ */
+function startTraining(stat, monsterId) {
   const def = TRAINING_DEFS.find(d => d.stat === stat);
   if (!def) throw new Error('unknown stat');
-  const pet = getActivePet();
-  if (!pet) throw new Error('no active pet');
+  const pet = monsterId
+    ? state.monsters.find(m => m.id === monsterId)
+    : getActivePet();
+  if (!pet) throw new Error('pet not found');
   if (pet.energy < TRAINING_CONFIG.energyCost) throw new Error(`needs ${TRAINING_CONFIG.energyCost} energy`);
-  const cd = state.trainCooldowns[stat] || 0;
+  const cd = state.trainCooldowns?.[pet.id]?.[stat] || 0;
   if (Date.now() < cd) {
     throw new Error(`cooldown ${Math.ceil((cd - Date.now())/1000)}s left`);
   }
-  return def;
+  return { def, pet };
 }
 
-function finishTraining(stat, taps) {
-  const pet = getActivePet();
-  if (!pet) throw new Error('no active pet');
+function finishTraining(stat, taps, monsterId) {
+  const pet = monsterId
+    ? state.monsters.find(m => m.id === monsterId)
+    : getActivePet();
+  if (!pet) throw new Error('pet not found');
   let gain = 0;
   for (const t of TRAINING_CONFIG.thresholds) {
     if (taps >= t.taps) { gain = t.gain; break; }
   }
   pet[stat === 'intl' ? 'intl' : stat] += gain;
   pet.energy = Math.max(0, pet.energy - TRAINING_CONFIG.energyCost);
-  state.trainCooldowns[stat] = Date.now() + TRAINING_CONFIG.cooldownSeconds * 1000;
+  state.trainCooldowns ??= {};
+  state.trainCooldowns[pet.id] ??= {};
+  state.trainCooldowns[pet.id][stat] = Date.now() + TRAINING_CONFIG.cooldownSeconds * 1000;
   saveState();
-  return { gain, taps };
+  return { gain, taps, pet };
 }
 
 // ------------------------------------------------------------
@@ -1156,6 +1191,29 @@ function setAdminOverride(category, id, patch) {
   saveState();
 }
 
+// Admin: direct player-state edits (no overrides layer — just mutate state).
+const PLAYER_FIELDS = ['name','coins','gems','stardust','tickets','trophies','fragments'];
+
+function setPlayerField(field, value) {
+  if (!PLAYER_FIELDS.includes(field)) throw new Error('bad player field');
+  if (field === 'name') {
+    state.player.name = String(value || 'Trainer').slice(0, 20);
+  } else {
+    const n = Number(value);
+    state.player[field] = Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 0;
+  }
+  saveState();
+}
+
+function setInventoryQty(itemId, qty) {
+  const id = Number(itemId);
+  if (!ITEM_BY_ID[id]) throw new Error('unknown item');
+  const n = Math.max(0, Math.floor(Number(qty) || 0));
+  if (n === 0) delete state.inventory[id];
+  else state.inventory[id] = n;
+  saveState();
+}
+
 /** Restore everything to data.js defaults, discard overrides. */
 function resetAdminOverrides() {
   // Reset live arrays in-place so existing *_BY_ID maps stay valid
@@ -1195,7 +1253,20 @@ function bootGame() {
         wateredAt: null, isPermanent: false, reharvestSeconds: 0,
       }));
     }
-    if (!state.trainCooldowns) state.trainCooldowns = { atk: 0, def: 0, spd: 0, intl: 0 };
+    // Migrate flat cooldowns (per-stat) to per-monster-per-stat shape
+    if (!state.trainCooldowns) {
+      state.trainCooldowns = {};
+    } else if (state.trainCooldowns.atk !== undefined || state.trainCooldowns.def !== undefined) {
+      const old = state.trainCooldowns;
+      state.trainCooldowns = {};
+      const active = state.activePetId;
+      if (active) {
+        state.trainCooldowns[active] = {
+          atk: old.atk || 0, def: old.def || 0,
+          spd: old.spd || 0, intl: old.intl || 0,
+        };
+      }
+    }
     if (!state.eventProgress) state.eventProgress = {};
     if (!state.eventStats) state.eventStats = { spendCoins: 0 };
     if (!state.adminOverrides) state.adminOverrides = { species: {}, items: {}, eggs: {} };
@@ -1234,6 +1305,7 @@ window.game = {
   getActiveEvent, eventProgress, claimEventQuest, claimEventFinalReward,
   // admin
   applyAdminOverrides, setAdminOverride, resetAdminOverrides,
+  setPlayerField, setInventoryQty, PLAYER_FIELDS,
   // social
   addFriend, removeFriend, sendMessage, processNpcReplies,
   // plant help

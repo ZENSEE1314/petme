@@ -134,11 +134,11 @@ ok(nextIn >= 0 && nextIn <= 600, `next energy point within 10 min (got ${nextIn}
 g.sleepPet();
 ok(!g.isSleeping(g.getActivePet()), 'wake up toggled off');
 
-// Now decay should resume
+// Energy does NOT decay just from time anymore — only player actions consume it
 g.state.lastTickAt = Date.now() - 30 * 60 * 1000;
-const energyBeforeDecay = g.getActivePet().energy;
+const energyBeforeTick = g.getActivePet().energy;
 g.tickDecay();
-ok(g.getActivePet().energy < energyBeforeDecay, 'energy decays while awake');
+ok(g.getActivePet().energy === energyBeforeTick, 'energy stays stable while awake (no time decay)');
 
 // Auto-wake at full energy
 g.sleepPet();
@@ -337,7 +337,8 @@ reset();
 g.newGame('Trainer');
 g.claimStarter(1);
 const beforeAtk = g.getActivePet().atk;
-const def = g.startTraining('atk');
+const startResult = g.startTraining('atk');
+const def = startResult.def;
 ok(def.stat === 'atk', 'training started');
 g.finishTraining('atk', 30);   // 25-49 → +2
 ok(g.getActivePet().atk === beforeAtk + 2, 'atk increased by 2 (30 taps)');
@@ -497,6 +498,107 @@ g.setAdminOverride('species', 1, { atk: 500 });
 g.saveState();
 const reloadedState = g.loadState();
 ok(reloadedState.adminOverrides.species['1'].atk === 500, 'overrides persist in localStorage');
+
+section('energy no longer decays over time');
+reset();
+g.newGame('NoDecay');
+g.claimStarter(1);
+const noDecayPet = g.getActivePet();
+noDecayPet.energy = 50;
+g.state.lastTickAt = Date.now() - 60 * 60 * 1000;  // pretend 1h passed, awake
+g.tickDecay();
+ok(g.getActivePet().energy === 50, `energy unchanged after 1h awake (got ${g.getActivePet().energy})`);
+// hunger SHOULD decay
+ok(g.getActivePet().hunger < 100, 'hunger still decays');
+
+section('actions deduct energy');
+reset();
+g.newGame('Energetic');
+g.claimStarter(1);
+const ePet = g.getActivePet();
+ePet.energy = 50;
+
+// Pet button
+g.petPet();
+ok(g.getActivePet().energy === 49, 'pet action costs 1 energy');
+
+// Play button (-8)
+g.playWithPet();
+ok(g.getActivePet().energy === 41, 'play action costs 8 energy');
+
+// Clean (medicine: Soap Bar) — -2
+g.state.inventory[401] = 1;
+g.useItem(401);
+ok(g.getActivePet().energy === 39, 'cleaning costs 2 energy');
+
+// Toy — -5
+g.state.inventory[501] = 1;
+g.useItem(501);
+ok(g.getActivePet().energy === 34, 'toy costs 5 energy');
+
+// Food doesn't cost energy
+g.state.inventory[301] = 1;
+g.getActivePet().hunger = 50;
+g.useItem(301);
+ok(g.getActivePet().energy === 34, 'feeding does NOT cost energy');
+
+// Insufficient energy blocks action
+g.getActivePet().energy = 4;
+threw = false;
+try { g.useItem(501); } catch { threw = true; }
+// (only fails if we had a toy left; we don't, so test from a fresh slot)
+g.state.inventory[501] = 1;
+threw = false;
+try { g.useItem(501); } catch { threw = true; }
+ok(threw, 'low energy blocks toy use');
+
+section('training per pet (pet selector)');
+reset();
+g.newGame('MultiTrain');
+// Make sure no admin overrides leaked from a prior test section
+g.resetAdminOverrides();
+g.claimStarter(1);
+const firstPet = g.getActivePet();
+const firstPetAtkBefore = firstPet.atk;
+const startBeforeSecondAtk = 40;
+// Hatch a second monster manually
+const second = {
+  id: 'fake-mon-2', speciesId: 4, nickname: '', isStarter: false, isShiny: false,
+  level: 1, xp: 0, hp: 55, atk: startBeforeSecondAtk, def: 50, spd: 45, intl: 50,
+  hunger: 100, cleanliness: 100, energy: 100, mood: 80, createdAt: Date.now(),
+};
+g.state.monsters.push(second);
+g.saveState();
+
+g.startTraining('atk', 'fake-mon-2');
+g.finishTraining('atk', 30, 'fake-mon-2');
+ok(second.atk === startBeforeSecondAtk + 2, 'training applied to selected monster (+2 atk)');
+ok(g.getActivePet().atk === firstPetAtkBefore, 'active pet untouched by selected-pet training');
+// Cooldowns are per-pet
+threw = false;
+try { g.startTraining('atk', 'fake-mon-2'); } catch { threw = true; }
+ok(threw, 'cooldown blocks repeat on same pet');
+// But OTHER pet can still train atk
+const def2 = g.startTraining('atk', g.state.monsters[0].id);
+ok(def2.def.stat === 'atk', 'different pet has independent cooldowns');
+
+section('admin player + inventory');
+reset();
+g.newGame('AdminPlayer');
+g.claimStarter(4);
+g.setPlayerField('coins', 99999);
+ok(g.state.player.coins === 99999, 'admin set coins');
+g.setPlayerField('gems', '500');
+ok(g.state.player.gems === 500, 'admin set gems from string');
+g.setPlayerField('name', 'NewName');
+ok(g.state.player.name === 'NewName', 'admin set name');
+g.setInventoryQty(301, 50);
+ok(g.state.inventory[301] === 50, 'admin set inventory qty');
+g.setInventoryQty(301, 0);
+ok(g.state.inventory[301] == null, 'qty 0 removes item');
+threw = false;
+try { g.setPlayerField('nope', 5); } catch { threw = true; }
+ok(threw, 'unknown player field rejected');
 
 section('dice battle');
 reset();
