@@ -395,6 +395,63 @@ const finalR = g.claimEventFinalReward();
 ok(finalR.mythicEgg === true, 'got mythic egg reward');
 ok(g.state.eggs.some(e => g.EGG_BY_ID[e.eggTypeId].tier === 'mythic'), 'mythic egg in inventory');
 
+section('shop currency picker');
+reset();
+g.newGame('Shopper');
+g.claimStarter(1);
+g.state.player.coins = 1000;
+g.state.player.gems = 100;
+// Premium Meal has both prices: 50 coins OR 5 gems
+const item302 = g.ITEM_BY_ID[302];
+ok(item302.priceCoins === 50 && item302.priceGems === 5, 'item 302 has dual price');
+
+const coinsBefore302 = g.state.player.coins;
+const gemsBefore302  = g.state.player.gems;
+g.buyItem(302, 'gems');
+ok(g.state.player.coins === coinsBefore302, 'coins untouched when paying with gems');
+ok(g.state.player.gems  === gemsBefore302 - 5, 'gems debited correctly');
+
+g.buyItem(302, 'coins');
+ok(g.state.player.coins === coinsBefore302 - 50, 'coins debited correctly when chosen');
+ok(g.state.player.gems  === gemsBefore302 - 5, 'gems unchanged from coin purchase');
+
+threw = false;
+try { g.buyItem(302, 'stardust'); } catch { threw = true; }
+ok(threw, 'cannot pay with currency the item has no price in');
+
+// itemAvailablePrices helper
+const prices302 = g.itemAvailablePrices(item302);
+ok(prices302.length === 2, 'item 302 has 2 currency options');
+ok(prices302.some(p => p.currency === 'coins' && p.amount === 50), 'coins option correct');
+ok(prices302.some(p => p.currency === 'gems'  && p.amount === 5),  'gems option correct');
+
+section('admin overrides on effect amounts');
+reset();
+g.newGame('EffectAdmin');
+const origKibbleHunger = g.ITEM_BY_ID[301].effect.hunger;
+g.setAdminOverride('items', 301, { hunger: 50 });
+ok(g.ITEM_BY_ID[301].effect.hunger === 50, 'admin overrode Pet Kibble hunger to 50');
+
+// Use the item — should apply the new (overridden) value
+g.claimStarter(4);
+const pet302 = g.getActivePet();
+pet302.hunger = 30;
+g.state.inventory[301] = 1;
+g.useItem(301);
+ok(g.getActivePet().hunger === 80, `kibble +50 from 30 = 80 (overridden) (got ${g.getActivePet().hunger})`);
+
+// Admin can add a brand-new effect not in defaults
+g.setAdminOverride('items', 301, { mood: 10 });
+ok(g.ITEM_BY_ID[301].effect.mood === 10, 'admin added mood effect');
+
+// Empty string deletes the effect
+g.setAdminOverride('items', 301, { mood: '' });
+ok(g.ITEM_BY_ID[301].effect.mood === undefined, 'empty effect string deletes the key');
+
+// Reset restores
+g.resetAdminOverrides();
+ok(g.ITEM_BY_ID[301].effect.hunger === origKibbleHunger, 'reset restores original hunger');
+
 section('admin overrides');
 reset();
 g.newGame('Admin');

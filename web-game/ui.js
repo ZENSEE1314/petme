@@ -715,11 +715,11 @@ function renderShop() {
     <h2 class="screen-title">Shop</h2>
 
     <h3 class="shop-section-title">🥚 Eggs</h3>
-    <p class="screen-sub">Drop rates are published — check each egg.</p>
+    <p class="screen-sub">Drop rates are published — check each egg. If an egg has multiple prices, pick which currency to spend.</p>
     <div class="shop-grid">
       ${g.EGG_TYPES.map(e => {
         const rar = g.RARITY[e.tier];
-        const priceStr = priceLabel(e);
+        const prices = g.eggAvailablePrices(e);
         const dropsStr = Object.entries(e.dropWeights)
           .map(([r,w]) => `<span style="color:${g.RARITY[r]?.color || '#000'}">${(w*100).toFixed(0)}% ${r}</span>`)
           .join('  ');
@@ -727,9 +727,14 @@ function renderShop() {
           <div class="shop-card" style="--rarity:${rar.color}; --glow:${rar.glow}">
             <div class="shop-emoji">${e.emoji}</div>
             <div class="shop-name" style="color:${rar.color}">${e.name}</div>
-            <div class="shop-sub">${priceStr} · ${Math.ceil(e.hatchSeconds/60)} min hatch</div>
+            <div class="shop-sub">${formatDuration(e.hatchSeconds)} hatch</div>
             <div class="shop-drops">${dropsStr}</div>
-            <button class="buy-egg-btn" data-egg="${e.id}">Buy</button>
+            <div class="buy-options">
+              ${prices.length === 0
+                ? '<button class="buy-egg-btn" disabled>event only</button>'
+                : prices.map(p => `<button class="buy-egg-btn" data-egg="${e.id}" data-currency="${p.currency}">${currencyEmoji(p.currency)} ${p.amount}</button>`).join('')
+              }
+            </div>
           </div>
         `;
       }).join('')}
@@ -744,15 +749,22 @@ function renderShop() {
 
     <h3 class="shop-section-title">🛍️ Items</h3>
     <div class="shop-grid">
-      ${g.ITEMS.map(i => `
-        <div class="shop-card">
-          <div class="shop-emoji">${i.emoji}</div>
-          <div class="shop-name">${i.name}</div>
-          <div class="shop-sub">${priceLabel(i)}</div>
-          <div class="shop-effect">${effectLabel(i.effect)}</div>
-          <button class="buy-item-btn" data-item="${i.id}">Buy</button>
-        </div>
-      `).join('')}
+      ${g.ITEMS.filter(i => i.type !== 'crop').map(i => {
+        const prices = g.itemAvailablePrices(i);
+        return `
+          <div class="shop-card">
+            <div class="shop-emoji">${i.emoji}</div>
+            <div class="shop-name">${i.name}</div>
+            <div class="shop-effect">${effectLabel(i.effect)}</div>
+            <div class="buy-options">
+              ${prices.length === 0
+                ? '<button class="buy-item-btn" disabled>not for sale</button>'
+                : prices.map(p => `<button class="buy-item-btn" data-item="${i.id}" data-currency="${p.currency}">${currencyEmoji(p.currency)} ${p.amount}</button>`).join('')
+              }
+            </div>
+          </div>
+        `;
+      }).join('')}
     </div>
 
     ${g.state.player.fragments >= g.CONFIG.fragmentsPerFreeEgg ? `
@@ -763,19 +775,25 @@ function renderShop() {
   `;
 
   root.querySelectorAll('.buy-egg-btn').forEach(btn => {
+    if (btn.disabled) return;
     btn.addEventListener('click', () => {
       try {
-        const egg = g.buyEgg(Number(btn.dataset.egg));
-        const sp = g.species(egg.predeterminedSpeciesId);
-        // Hide species, just tell them it's incubating
-        showToast(`🥚 Egg bought! Incubating — check Eggs tab in ${Math.ceil((egg.readyAt-Date.now())/60000)} min.`);
+        const currency = btn.dataset.currency || undefined;
+        const egg = g.buyEgg(Number(btn.dataset.egg), currency);
+        showToast(`🥚 Egg bought! Incubating — check Eggs tab.`);
         renderShop();
       } catch (e) { alert(e.message); }
     });
   });
   root.querySelectorAll('.buy-item-btn').forEach(btn => {
+    if (btn.disabled) return;
     btn.addEventListener('click', () => {
-      try { g.buyItem(Number(btn.dataset.item)); renderShop(); showToast('Bought!'); }
+      try {
+        const currency = btn.dataset.currency || undefined;
+        g.buyItem(Number(btn.dataset.item), currency);
+        renderShop();
+        showToast('Bought!');
+      }
       catch (e) { alert(e.message); }
     });
   });
@@ -791,6 +809,10 @@ function priceLabel(thing) {
   if (thing.priceGems)     parts.push(`💎 ${thing.priceGems}`);
   if (thing.priceStardust) parts.push(`✨ ${thing.priceStardust}`);
   return parts.join(' or ');
+}
+
+function currencyEmoji(c) {
+  return ({ coins: '🪙', gems: '💎', stardust: '✨', tickets: '🎟️' })[c] || '?';
 }
 
 function effectLabel(eff) {
@@ -1092,21 +1114,36 @@ function renderAdminSeeds() {
 }
 
 function renderAdminItems() {
-  const items = g.ITEMS.filter(i => i.type !== 'seed' && i.type !== 'crop');
-  const rows = items.map(it => `
-    <tr>
-      <td>${it.id}</td>
-      <td><input class="admin-input small" data-category="items" data-id="${it.id}" data-field="emoji" value="${it.emoji}"></td>
-      <td><input class="admin-input" data-category="items" data-id="${it.id}" data-field="name" value="${it.name}"></td>
-      <td><span class="muted small">${it.type}</span></td>
-      <td><input class="admin-input num" type="number" data-category="items" data-id="${it.id}" data-field="priceCoins"    value="${it.priceCoins    ?? ''}" placeholder="-"></td>
-      <td><input class="admin-input num" type="number" data-category="items" data-id="${it.id}" data-field="priceGems"     value="${it.priceGems     ?? ''}" placeholder="-"></td>
-      <td><input class="admin-input num" type="number" data-category="items" data-id="${it.id}" data-field="priceStardust" value="${it.priceStardust ?? ''}" placeholder="-"></td>
-    </tr>
-  `).join('');
+  // Includes food, medicine, toys, AND crops (so admin can tune how much crops heal when fed)
+  const items = g.ITEMS.filter(i => i.type !== 'seed');
+  const rows = items.map(it => {
+    const eff = it.effect || {};
+    return `
+      <tr>
+        <td>${it.id}</td>
+        <td><input class="admin-input small" data-category="items" data-id="${it.id}" data-field="emoji" value="${it.emoji}"></td>
+        <td><input class="admin-input" data-category="items" data-id="${it.id}" data-field="name" value="${it.name}"></td>
+        <td><span class="muted small">${it.type}</span></td>
+        <td><input class="admin-input num" type="number" data-category="items" data-id="${it.id}" data-field="hunger"      value="${eff.hunger      ?? ''}" placeholder="-" title="+hunger when used"></td>
+        <td><input class="admin-input num" type="number" data-category="items" data-id="${it.id}" data-field="cleanliness" value="${eff.cleanliness ?? ''}" placeholder="-" title="+cleanliness"></td>
+        <td><input class="admin-input num" type="number" data-category="items" data-id="${it.id}" data-field="energy"      value="${eff.energy      ?? ''}" placeholder="-" title="+energy"></td>
+        <td><input class="admin-input num" type="number" data-category="items" data-id="${it.id}" data-field="mood"        value="${eff.mood        ?? ''}" placeholder="-" title="+mood"></td>
+        <td><input class="admin-input num" type="number" data-category="items" data-id="${it.id}" data-field="priceCoins"    value="${it.priceCoins    ?? ''}" placeholder="-"></td>
+        <td><input class="admin-input num" type="number" data-category="items" data-id="${it.id}" data-field="priceGems"     value="${it.priceGems     ?? ''}" placeholder="-"></td>
+        <td><input class="admin-input num" type="number" data-category="items" data-id="${it.id}" data-field="priceStardust" value="${it.priceStardust ?? ''}" placeholder="-"></td>
+      </tr>
+    `;
+  }).join('');
   return `
+    <p class="admin-table-hint">Empty effect cell = no effect. Leave price empty for "not for sale" in that currency. Set multiple prices ⇒ player picks which currency to spend.</p>
     <table class="admin-table">
-      <thead><tr><th>#</th><th>Emoji</th><th>Name</th><th>Type</th><th>Price 🪙</th><th>Price 💎</th><th>Price ✨</th></tr></thead>
+      <thead>
+        <tr>
+          <th>#</th><th>Emoji</th><th>Name</th><th>Type</th>
+          <th>+🍖</th><th>+🧼</th><th>+⚡</th><th>+😊</th>
+          <th>🪙</th><th>💎</th><th>✨</th>
+        </tr>
+      </thead>
       <tbody>${rows}</tbody>
     </table>
   `;

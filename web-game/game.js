@@ -320,18 +320,47 @@ function tickDecay() {
 // Shop — item purchases
 // ------------------------------------------------------------
 
-function buyItem(itemId) {
+/**
+ * Buy an item. If the item has prices in multiple currencies, `currency`
+ * picks which one to charge. If omitted, falls back to the first set price
+ * in coin → gem → stardust order (back-compat).
+ */
+function buyItem(itemId, currency) {
   const item = ITEM_BY_ID[itemId];
   if (!item) throw new Error('unknown item');
-  const cost = {};
-  if (item.priceCoins) cost.coins = item.priceCoins;
-  else if (item.priceGems) cost.gems = item.priceGems;
-  else throw new Error(`${item.name} not purchasable`);
 
+  const availablePrices = itemAvailablePrices(item);
+  if (availablePrices.length === 0) throw new Error(`${item.name} not purchasable`);
+
+  let chosen;
+  if (currency) {
+    chosen = availablePrices.find(p => p.currency === currency);
+    if (!chosen) throw new Error(`${item.name} has no ${currency} price`);
+  } else {
+    chosen = availablePrices[0];
+  }
+
+  const cost = { [chosen.currency]: chosen.amount };
   spend(cost, 'buy_' + item.id);
   state.inventory[itemId] = (state.inventory[itemId] || 0) + 1;
-  if (cost.coins) bumpEventQuest('spend_coins', cost.coins);
+  if (chosen.currency === 'coins') bumpEventQuest('spend_coins', chosen.amount);
   saveState();
+}
+
+function itemAvailablePrices(item) {
+  const out = [];
+  if (item.priceCoins   != null) out.push({ currency: 'coins',    amount: item.priceCoins });
+  if (item.priceGems    != null) out.push({ currency: 'gems',     amount: item.priceGems });
+  if (item.priceStardust!= null) out.push({ currency: 'stardust', amount: item.priceStardust });
+  return out;
+}
+
+function eggAvailablePrices(egg) {
+  const out = [];
+  if (egg.priceCoins   != null) out.push({ currency: 'coins',    amount: egg.priceCoins });
+  if (egg.priceGems    != null) out.push({ currency: 'gems',     amount: egg.priceGems });
+  if (egg.priceStardust!= null) out.push({ currency: 'stardust', amount: egg.priceStardust });
+  return out;
 }
 
 // ------------------------------------------------------------
@@ -349,7 +378,7 @@ function canBuyMoreEggsToday() {
   return state.eggPurchasesToday.count < CONFIG.dailyEggCap;
 }
 
-function buyEgg(eggTypeId) {
+function buyEgg(eggTypeId, currency) {
   resetDailyCapIfNeeded();
   if (state.eggPurchasesToday.count >= CONFIG.dailyEggCap) {
     throw new Error(`daily egg cap reached (${CONFIG.dailyEggCap})`);
@@ -358,27 +387,21 @@ function buyEgg(eggTypeId) {
   const eggType = EGG_BY_ID[eggTypeId];
   if (!eggType) throw new Error('unknown egg type');
 
-  // Try cheapest currency that has price set
-  let cost = {};
-  if (eggType.priceCoins) cost = { coins: eggType.priceCoins };
-  else if (eggType.priceGems) cost = { gems: eggType.priceGems };
-  else if (eggType.priceStardust) cost = { stardust: eggType.priceStardust };
-  else throw new Error(`${eggType.name} not for sale`);
+  const prices = eggAvailablePrices(eggType);
+  if (prices.length === 0) throw new Error(`${eggType.name} not for sale`);
 
-  if (!canAfford(cost)) {
-    // For dual-priced eggs, try alternate
-    if (eggType.priceGems && cost.coins) {
-      const alt = { gems: eggType.priceGems };
-      if (canAfford(alt)) cost = alt;
-      else throw new Error(`need ${eggType.priceCoins} coins or ${eggType.priceGems} gems`);
-    } else {
-      throw new Error('insufficient funds');
-    }
+  let chosen;
+  if (currency) {
+    chosen = prices.find(p => p.currency === currency);
+    if (!chosen) throw new Error(`${eggType.name} has no ${currency} price`);
+  } else {
+    chosen = prices[0];
   }
 
+  const cost = { [chosen.currency]: chosen.amount };
   spend(cost, 'egg_purchase');
   state.eggPurchasesToday.count++;
-  if (cost.coins) bumpEventQuest('spend_coins', cost.coins);
+  if (chosen.currency === 'coins') bumpEventQuest('spend_coins', chosen.amount);
 
   // Roll rarity (pity-aware)
   const rolledRarity = rollRarityWithPity(eggType);
@@ -867,6 +890,14 @@ function applyAdminOverrides() {
     if (it.effect && patch.growSeconds !== undefined && patch.growSeconds !== '') {
       it.effect.grow_seconds = Number(patch.growSeconds);
     }
+    // Effect amounts (heal values). Empty string deletes the effect key.
+    it.effect = it.effect || {};
+    for (const k of ['hunger','cleanliness','energy','mood']) {
+      if (patch[k] !== undefined) {
+        if (patch[k] === '' || patch[k] === null) delete it.effect[k];
+        else it.effect[k] = Number(patch[k]);
+      }
+    }
   }
 
   for (const [idStr, patch] of Object.entries(ov.eggs || {})) {
@@ -955,6 +986,7 @@ window.game = {
   claimStarter, getActivePet, setActivePet, useItem, sleepPet, isSleeping, secondsToNextEnergyPoint, playWithPet, petPet,
   // shop / eggs
   buyItem, buyEgg, hatchEgg, canBuyMoreEggsToday, redeemFragments,
+  itemAvailablePrices, eggAvailablePrices,
   // battle
   runBattle,
   // farm
