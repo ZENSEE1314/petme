@@ -24,10 +24,23 @@
 html, body {
   margin: 0; padding: 0;
   font-family: 'Nunito', 'SF Pro Display', system-ui, -apple-system, sans-serif;
+  font-weight: 500;
   color: var(--text);
   background: linear-gradient(160deg, var(--bg) 0%, var(--bg-soft) 100%);
   min-height: 100vh;
   -webkit-tap-highlight-color: transparent;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+h1, h2, h3 { font-family: inherit; font-weight: 800; letter-spacing: -0.5px; }
+
+/* Reduced motion respect (CRITICAL accessibility rule) */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 button { font-family: inherit; cursor: pointer; }
 button:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -1667,4 +1680,475 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   .actions-grid { grid-template-columns: 1fr; }
   .need { grid-template-columns: 100px 1fr 32px; }
   .need-label { font-size: 13px; }
+}
+
+/* ============================================================
+   ░░░ v0.9 POLISH PASS — animations, halos, glassmorphism ░░░
+   ============================================================ */
+
+/* ------------------------------------------------------------
+   Animated gradient blob backdrop (landing + login)
+------------------------------------------------------------ */
+#landing-screen, #login-screen {
+  position: relative;
+  overflow: hidden;
+}
+#landing-screen::before,
+#landing-screen::after,
+#login-screen::before {
+  content: '';
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.45;
+  pointer-events: none;
+  z-index: 0;
+}
+#landing-screen::before {
+  width: 480px; height: 480px;
+  background: radial-gradient(circle, var(--primary) 0%, transparent 65%);
+  top: -120px; right: -120px;
+  animation: float-blob 18s ease-in-out infinite;
+}
+#landing-screen::after {
+  width: 580px; height: 580px;
+  background: radial-gradient(circle, var(--accent) 0%, transparent 65%);
+  bottom: -180px; left: -180px;
+  animation: float-blob 22s ease-in-out infinite reverse;
+}
+#login-screen::before {
+  width: 420px; height: 420px;
+  background: radial-gradient(circle, var(--primary-soft) 0%, transparent 60%);
+  top: -100px; left: -100px;
+  animation: float-blob 20s ease-in-out infinite;
+}
+@keyframes float-blob {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33%      { transform: translate(40px, -30px) scale(1.08); }
+  66%      { transform: translate(-30px, 40px) scale(0.95); }
+}
+/* Push content above the blobs */
+#landing-screen > *, #login-screen > * { position: relative; z-index: 1; }
+
+/* ------------------------------------------------------------
+   Landing hero — bigger, bouncier, with entrance choreography
+------------------------------------------------------------ */
+.landing-logo {
+  font-size: 112px;
+  filter: drop-shadow(0 8px 24px rgba(139, 126, 216, 0.35));
+  animation:
+    bob 3.2s ease-in-out infinite,
+    fade-in-scale 0.9s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+.landing-title {
+  font-size: 64px;
+  font-weight: 900;
+  animation: slide-up 0.7s cubic-bezier(0.34, 1.56, 0.64, 1) 0.1s both;
+}
+.landing-tagline {
+  animation: slide-up 0.7s ease-out 0.25s both;
+}
+.landing-sub {
+  animation: slide-up 0.7s ease-out 0.35s both;
+}
+.landing-cta {
+  animation: slide-up 0.7s cubic-bezier(0.34, 1.56, 0.64, 1) 0.5s both,
+             cta-pulse 2.6s ease-in-out 1.5s infinite;
+  position: relative;
+  overflow: hidden;
+}
+.landing-cta::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(120deg, transparent 30%, rgba(255,255,255,0.4) 50%, transparent 70%);
+  transform: translateX(-100%);
+  animation: cta-shine 3s ease-in-out 2s infinite;
+}
+@keyframes fade-in-scale {
+  from { opacity: 0; transform: scale(0.4); }
+  to   { opacity: 1; transform: scale(1); }
+}
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes cta-pulse {
+  0%, 100% { transform: scale(1);    box-shadow: 0 4px 12px rgba(139, 126, 216, 0.4); }
+  50%      { transform: scale(1.04); box-shadow: 0 8px 32px rgba(255, 143, 177, 0.5); }
+}
+@keyframes cta-shine {
+  0%   { transform: translateX(-120%); }
+  100% { transform: translateX(120%); }
+}
+
+/* Feature cards — staggered entrance + hover lift */
+.feature-card {
+  animation: card-enter 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.3s ease;
+  cursor: default;
+  backdrop-filter: blur(8px);
+  background: rgba(255, 255, 255, 0.85);
+}
+.feature-card:nth-child(1) { animation-delay: 0.50s; }
+.feature-card:nth-child(2) { animation-delay: 0.60s; }
+.feature-card:nth-child(3) { animation-delay: 0.70s; }
+.feature-card:nth-child(4) { animation-delay: 0.80s; }
+.feature-card:nth-child(5) { animation-delay: 0.90s; }
+.feature-card:nth-child(6) { animation-delay: 1.00s; }
+.feature-card:hover {
+  transform: translateY(-6px) scale(1.02);
+  box-shadow: 0 16px 48px rgba(139, 126, 216, 0.25);
+}
+.feature-emoji {
+  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.1));
+  transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.feature-card:hover .feature-emoji { transform: scale(1.15) rotate(-4deg); }
+
+@keyframes card-enter {
+  from { opacity: 0; transform: translateY(40px) scale(0.92); }
+  to   { opacity: 1; transform: translateY(0)    scale(1); }
+}
+
+/* ------------------------------------------------------------
+   Pet emoji with RARITY HALO — drop-in upgrade for all
+   pet-emoji / dex-emoji / mini-emoji / starter-emoji
+------------------------------------------------------------ */
+.pet-emoji,
+.dex-card.owned .dex-emoji,
+.starter-emoji,
+.mini-emoji {
+  position: relative;
+}
+.pet-emoji {
+  filter: drop-shadow(0 12px 16px rgba(0, 0, 0, 0.18));
+  font-size: 108px;
+}
+.dex-card.owned .dex-emoji {
+  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.15));
+}
+
+/* Halo pulsing aura behind owned pets (uses --rarity CSS var) */
+.pet-card .pet-emoji::before,
+.dex-card.owned .dex-emoji::before {
+  content: '';
+  position: absolute;
+  inset: -25%;
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--rarity, var(--primary-soft)) 0%, transparent 60%);
+  filter: blur(12px);
+  opacity: 0.55;
+  z-index: -1;
+  animation: halo-pulse 3.5s ease-in-out infinite;
+}
+@keyframes halo-pulse {
+  0%, 100% { transform: scale(1);    opacity: 0.45; }
+  50%      { transform: scale(1.18); opacity: 0.75; }
+}
+
+/* Floor shadow under the active pet (gives 3D feel) */
+.pet-card {
+  position: relative;
+}
+.pet-card .pet-emoji::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: -8px;
+  width: 70%;
+  height: 12px;
+  transform: translateX(-50%);
+  background: radial-gradient(ellipse, rgba(0, 0, 0, 0.2) 0%, transparent 70%);
+  z-index: -1;
+}
+
+/* Shiny pets — orbiting sparkles */
+.pet-emoji.shiny,
+.dex-emoji.shiny {
+  animation: bob 2.6s ease-in-out infinite, shiny-glow 2s ease-in-out infinite;
+}
+@keyframes shiny-glow {
+  0%, 100% { filter: drop-shadow(0 0 8px gold) drop-shadow(0 12px 16px rgba(0,0,0,0.18)); }
+  50%      { filter: drop-shadow(0 0 24px gold) drop-shadow(0 0 48px #fde047) drop-shadow(0 12px 16px rgba(0,0,0,0.18)); }
+}
+
+/* ------------------------------------------------------------
+   Buttons — universal scale-on-press + ripple-like glow
+   (CRITICAL UX rules: feedback within 100ms, scale 0.95–1.05)
+------------------------------------------------------------ */
+button {
+  transition:
+    transform 0.12s cubic-bezier(0.34, 1.56, 0.64, 1),
+    box-shadow 0.2s ease,
+    background-color 0.2s ease,
+    color 0.2s ease,
+    border-color 0.2s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+button:active:not(:disabled) {
+  transform: scale(0.94);
+}
+/* Visible focus ring (a11y critical) */
+button:focus-visible,
+input:focus-visible,
+.admin-input:focus-visible {
+  outline: 3px solid var(--primary-soft);
+  outline-offset: 2px;
+}
+
+/* Primary CTA / big-btn — extra polish */
+.big-btn,
+#sign-up-btn {
+  position: relative;
+  overflow: hidden;
+}
+.big-btn::after,
+#sign-up-btn::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.3);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.big-btn:active::after,
+#sign-up-btn:active::after { opacity: 1; }
+
+/* ------------------------------------------------------------
+   Cards — soft glassmorphism + lift on hover
+------------------------------------------------------------ */
+.pet-card,
+.shop-card,
+.egg-card,
+.dex-card,
+.feature-card,
+.starter-card,
+.account-row,
+.friend-row,
+.action-group,
+.needs-grid,
+.battle-log,
+.help-row,
+.history-row {
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.shop-card { transition: transform 0.2s, box-shadow 0.2s; }
+.shop-card:hover {
+  transform: translateY(-4px) scale(1.02);
+  box-shadow: 0 12px 36px rgba(139, 126, 216, 0.2);
+}
+
+.dex-card { transition: transform 0.2s, box-shadow 0.2s; }
+.dex-card.owned:hover {
+  transform: translateY(-2px) scale(1.04) rotate(-1deg);
+  z-index: 1;
+}
+
+.starter-card { transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.3s; }
+.starter-card:hover .starter-emoji { transform: scale(1.1) rotate(-6deg); }
+.starter-emoji { transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1); }
+
+/* ------------------------------------------------------------
+   Header — stronger glass + safe-area aware
+------------------------------------------------------------ */
+.app-header {
+  background: rgba(254, 246, 240, 0.78);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  padding-top: max(10px, env(safe-area-inset-top));
+}
+.hdr-row .stat {
+  background: rgba(255, 255, 255, 0.85);
+  transition: transform 0.15s, background-color 0.15s;
+}
+
+/* ------------------------------------------------------------
+   Bottom nav — active-tab indicator (smooth + touch-friendly)
+------------------------------------------------------------ */
+.bottom-nav {
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  padding-bottom: max(12px, env(safe-area-inset-bottom));
+}
+.nav-tab {
+  position: relative;
+  min-height: 48px;     /* meet 48dp touch target */
+}
+.nav-tab::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 32px;
+  height: 3px;
+  background: linear-gradient(90deg, var(--primary), var(--accent));
+  border-radius: 0 0 4px 4px;
+  transform: translateX(-50%) scaleX(0);
+  transform-origin: center;
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.nav-tab.active::before { transform: translateX(-50%) scaleX(1); }
+.nav-tab .nav-emoji { transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); }
+.nav-tab.active .nav-emoji { transform: scale(1.2) translateY(-2px); }
+
+/* ------------------------------------------------------------
+   Modals — bounce-in entrance
+------------------------------------------------------------ */
+.modal { animation: modal-fade 0.25s ease-out; }
+.modal-card {
+  animation: modal-pop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+  backdrop-filter: blur(12px);
+  background: rgba(255, 255, 255, 0.96);
+}
+@keyframes modal-fade {
+  from { opacity: 0; backdrop-filter: blur(0px); }
+  to   { opacity: 1; backdrop-filter: blur(8px); }
+}
+@keyframes modal-pop {
+  from { transform: scale(0.5) translateY(40px); opacity: 0; }
+  to   { transform: scale(1)   translateY(0);   opacity: 1; }
+}
+
+/* Confetti on hatch reveal */
+.modal-emoji {
+  position: relative;
+}
+.modal-emoji::before,
+.modal-emoji::after {
+  content: '✨';
+  position: absolute;
+  font-size: 24px;
+  pointer-events: none;
+  animation: sparkle-orbit 3s linear infinite;
+}
+.modal-emoji::before {
+  top: 0; left: 0;
+  animation-delay: 0s;
+}
+.modal-emoji::after {
+  top: 0; right: 0;
+  animation-delay: 1.5s;
+}
+@keyframes sparkle-orbit {
+  0%   { transform: translate(0, 0)        scale(0.5); opacity: 0; }
+  20%  { opacity: 1; }
+  100% { transform: translate(-80px, 120px) scale(1.2); opacity: 0; }
+}
+
+/* ------------------------------------------------------------
+   Need bars — subtle shimmer when high (>80)
+------------------------------------------------------------ */
+.need-fill {
+  position: relative;
+  overflow: hidden;
+}
+.need-fill::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent);
+  transform: translateX(-100%);
+  animation: shimmer 2.5s ease-in-out infinite;
+}
+.need-fill.need-high::after { animation-play-state: running; }
+.need-fill.need-mid::after,
+.need-fill.need-low::after  { animation-play-state: paused; opacity: 0; }
+@keyframes shimmer {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(200%); }
+}
+
+/* ------------------------------------------------------------
+   Empty states — friendly illustrations
+------------------------------------------------------------ */
+.empty-state {
+  text-align: center;
+  padding: 48px 20px;
+  opacity: 0.8;
+}
+.empty-state-emoji {
+  font-size: 64px;
+  margin-bottom: 12px;
+  filter: grayscale(0.3);
+  animation: bob 3s ease-in-out infinite;
+}
+.empty-state-title { font-weight: 800; margin: 4px 0; }
+.empty-state-sub { color: var(--text-soft); font-size: 14px; margin: 4px 0 16px; }
+
+/* ------------------------------------------------------------
+   Toast — slide in with bounce
+------------------------------------------------------------ */
+#toast {
+  background: rgba(45, 36, 54, 0.92);
+  backdrop-filter: blur(12px);
+}
+#toast.show {
+  animation: toast-in 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@keyframes toast-in {
+  0%   { transform: translateX(-50%) translateY(40px) scale(0.8); opacity: 0; }
+  60%  { transform: translateX(-50%) translateY(-4px) scale(1.05); opacity: 1; }
+  100% { transform: translateX(-50%) translateY(0) scale(1); opacity: 1; }
+}
+
+/* ------------------------------------------------------------
+   Loading skeleton
+------------------------------------------------------------ */
+.skeleton {
+  background: linear-gradient(90deg,
+    rgba(0,0,0,0.06) 0%,
+    rgba(0,0,0,0.12) 50%,
+    rgba(0,0,0,0.06) 100%);
+  background-size: 200% 100%;
+  animation: skeleton-shine 1.6s linear infinite;
+  border-radius: var(--radius-sm);
+}
+@keyframes skeleton-shine {
+  from { background-position: 200% 0; }
+  to   { background-position: -200% 0; }
+}
+
+/* ------------------------------------------------------------
+   Battle log dice — bigger, more expressive
+------------------------------------------------------------ */
+.battle-steps li {
+  animation: log-slide 0.3s ease-out;
+}
+@keyframes log-slide {
+  from { opacity: 0; transform: translateX(-10px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+.die-face {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: linear-gradient(135deg, var(--card), var(--bg-soft));
+  color: var(--primary);
+  padding: 2px 10px;
+  border-radius: 8px;
+  font-weight: 800;
+  font-size: 14px;
+  box-shadow: 0 2px 6px rgba(139, 126, 216, 0.2);
+  animation: die-bounce 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@keyframes die-bounce {
+  0%   { transform: scale(0) rotate(-180deg); }
+  60%  { transform: scale(1.2) rotate(20deg); }
+  100% { transform: scale(1) rotate(0); }
+}
+
+/* ------------------------------------------------------------
+   Mobile bumps — bigger touch targets
+------------------------------------------------------------ */
+@media (max-width: 480px) {
+  .landing-logo  { font-size: 88px; }
+  .landing-title { font-size: 48px; }
+  .pet-emoji     { font-size: 96px; }
+  .nav-tab       { padding: 8px 2px; }
+  .nav-tab .nav-emoji { font-size: 22px; }
 }
