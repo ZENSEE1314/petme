@@ -1818,18 +1818,45 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   display: inline-block;
   object-fit: contain;
   image-rendering: -webkit-optimize-contrast;
-  filter: drop-shadow(0 8px 16px rgba(0,0,0,0.2));
-  /* Mask off the inconsistent backgrounds from the generator */
-  -webkit-mask-image: radial-gradient(circle at 50% 45%, black 55%, transparent 75%);
-          mask-image: radial-gradient(circle at 50% 45%, black 55%, transparent 75%);
-  border-radius: 50%;
-  animation: bob 2.8s ease-in-out infinite;
+  /* Soft floor shadow + subtle outer glow */
+  filter: drop-shadow(0 16px 20px rgba(0, 0, 0, 0.25))
+          drop-shadow(0 0 14px rgba(255, 255, 255, 0.4));
+  /* Multiply makes the white generator backgrounds blend into the page bg */
+  mix-blend-mode: multiply;
+  /* Combined bob + sway in a single keyframe so both transforms compose */
+  animation: pet-alive 3.6s ease-in-out infinite;
+  transform-origin: bottom center;
 }
 .pet-img.shiny {
-  filter: drop-shadow(0 0 12px gold) drop-shadow(0 8px 16px rgba(0,0,0,0.2));
+  filter: drop-shadow(0 0 18px gold)
+          drop-shadow(0 16px 20px rgba(0, 0, 0, 0.25));
 }
 .dex-card .pet-img {
-  animation: none;       /* keep dex grid calm; only active pet bobs */
+  /* Calmer in the dex grid — single small bob, no sway */
+  animation: pet-bob 3.2s ease-in-out infinite;
+  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.18));
+}
+
+/* When .pet-emoji wraps a real <img>, the img owns the motion —
+   suppress the wrapper's bob so the two don't compound. */
+.pet-emoji:has(.pet-img) {
+  animation: none !important;
+}
+
+/* Calm grid bob */
+@keyframes pet-bob {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-6px); }
+}
+/* "Alive" motion — bob (vertical) + sway (rotate) + squash-stretch.
+   Combined into one keyframe because multiple CSS animations on the
+   same `transform` property only let the last one win. */
+@keyframes pet-alive {
+  0%   { transform: translateY(0)    rotate(-2deg) scaleY(1)    scaleX(1); }
+  25%  { transform: translateY(-8px) rotate(0deg)  scaleY(1.03) scaleX(0.98); }
+  50%  { transform: translateY(-2px) rotate(2deg)  scaleY(1)    scaleX(1); }
+  75%  { transform: translateY(-8px) rotate(0deg)  scaleY(1.03) scaleX(0.98); }
+  100% { transform: translateY(0)    rotate(-2deg) scaleY(1)    scaleX(1); }
 }
 .dex-locked-glyph {
   font-size: 40px;

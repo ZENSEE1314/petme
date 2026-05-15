@@ -22,7 +22,7 @@ $petDir = Join-Path $PSScriptRoot "..\web-game\assets\pets"
 New-Item -ItemType Directory -Path $petDir -Force | Out-Null
 Set-Location $petDir
 
-$style = "Thick clean black outlines, saturated warm colors, soft rim lighting, magical glow. Transparent background, centered, no text, no watermark. Anime digital painting style. High detail, polished. Single character only."
+$style = "Thick clean black outlines, saturated colors, soft rim lighting, magical glow. Anime digital painting style. High detail, polished. Single character only, full body shown, no text, no watermark. PURE WHITE BACKGROUND, plain white background, isolated on white, sticker style on white background, no scenery, no dark backdrop, no grey backdrop."
 
 $pets = @(
   @{id=1;  name='emberlet';     desc='baby fire firefly creature. Round bulbous orange-and-yellow gradient body, oversized head, huge sparkly anime eyes with catch lights, curved smile, tiny antennae, small translucent fairy wings with flame edges, ember-tail glowing.'},
