@@ -104,8 +104,27 @@ foreach ($p in $pets) {
 }
 
 Write-Host ""
-Write-Host "=== Done ===" -ForegroundColor Cyan
+Write-Host "=== Done generating ===" -ForegroundColor Cyan
 Write-Host "  Generated: $generated · Skipped: $skipped · Failed: $failed"
+Write-Host ""
+
+# Auto-remove white backgrounds via flood-fill — makes PNGs truly transparent
+if ($generated -gt 0) {
+  Write-Host "Removing white backgrounds (flood-fill)..." -ForegroundColor Cyan
+  $pyCandidates = @(
+    "C:\Users\Zen See\AppData\Local\Python\pythoncore-3.14-64\python.exe",
+    "python.exe",
+    "python3.exe"
+  )
+  $py = $pyCandidates | Where-Object { Get-Command $_ -ErrorAction SilentlyContinue } | Select-Object -First 1
+  if ($py) {
+    $script = Join-Path $PSScriptRoot "remove-pet-bg.py"
+    & $py $script
+  } else {
+    Write-Host "  WARN: no Python found, skipping bg removal" -ForegroundColor Yellow
+    Write-Host "        Install Python + Pillow + numpy then run scripts/remove-pet-bg.py" -ForegroundColor Yellow
+  }
+}
 Write-Host ""
 Write-Host "All pet files:"
 Get-ChildItem -File -Filter "??-*.png" -ErrorAction SilentlyContinue | Sort-Object Name |

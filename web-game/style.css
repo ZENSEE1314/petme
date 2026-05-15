@@ -1818,23 +1818,20 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   display: inline-block;
   object-fit: contain;
   image-rendering: -webkit-optimize-contrast;
-  /* Soft floor shadow + subtle outer glow */
-  filter: drop-shadow(0 16px 20px rgba(0, 0, 0, 0.25))
-          drop-shadow(0 0 14px rgba(255, 255, 255, 0.4));
-  /* Multiply makes the white generator backgrounds blend into the page bg */
-  mix-blend-mode: multiply;
-  /* Combined bob + sway in a single keyframe so both transforms compose */
+  /* PNGs are real transparent (flood-fill processed) — no blend trick needed.
+     Soft colorful glow only, no harsh black shadow. */
+  filter: drop-shadow(0 6px 12px rgba(139, 126, 216, 0.18));
   animation: pet-alive 3.6s ease-in-out infinite;
   transform-origin: bottom center;
 }
 .pet-img.shiny {
   filter: drop-shadow(0 0 18px gold)
-          drop-shadow(0 16px 20px rgba(0, 0, 0, 0.25));
+          drop-shadow(0 6px 12px rgba(255, 200, 0, 0.25));
 }
 .dex-card .pet-img {
   /* Calmer in the dex grid — single small bob, no sway */
   animation: pet-bob 3.2s ease-in-out infinite;
-  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.18));
+  filter: drop-shadow(0 2px 4px rgba(139, 126, 216, 0.15));
 }
 
 /* When .pet-emoji wraps a real <img>, the img owns the motion —
@@ -1909,21 +1906,9 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   50%      { transform: scale(1.18); opacity: 0.75; }
 }
 
-/* Floor shadow under the active pet (gives 3D feel) */
-.pet-card {
-  position: relative;
-}
-.pet-card .pet-emoji::after {
-  content: '';
-  position: absolute;
-  left: 50%;
-  bottom: -8px;
-  width: 70%;
-  height: 12px;
-  transform: translateX(-50%);
-  background: radial-gradient(ellipse, rgba(0, 0, 0, 0.2) 0%, transparent 70%);
-  z-index: -1;
-}
+/* (Floor shadow removed in v1.0.2 — the transparent PNGs + soft colored
+   drop-shadow on .pet-img give grounding without the dark patch.) */
+.pet-card { position: relative; }
 
 /* Shiny pets — orbiting sparkles */
 .pet-emoji.shiny,
