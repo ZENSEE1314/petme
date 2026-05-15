@@ -1812,6 +1812,41 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 }
 
 /* ------------------------------------------------------------
+   Real chibi pet images (Pollinations-generated PNGs)
+------------------------------------------------------------ */
+.pet-img {
+  display: inline-block;
+  object-fit: contain;
+  image-rendering: -webkit-optimize-contrast;
+  filter: drop-shadow(0 8px 16px rgba(0,0,0,0.2));
+  /* Mask off the inconsistent backgrounds from the generator */
+  -webkit-mask-image: radial-gradient(circle at 50% 45%, black 55%, transparent 75%);
+          mask-image: radial-gradient(circle at 50% 45%, black 55%, transparent 75%);
+  border-radius: 50%;
+  animation: bob 2.8s ease-in-out infinite;
+}
+.pet-img.shiny {
+  filter: drop-shadow(0 0 12px gold) drop-shadow(0 8px 16px rgba(0,0,0,0.2));
+}
+.dex-card .pet-img {
+  animation: none;       /* keep dex grid calm; only active pet bobs */
+}
+.dex-locked-glyph {
+  font-size: 40px;
+  opacity: 0.6;
+}
+.pet-emoji-fallback {
+  display: inline-block;
+  animation: bob 2.6s ease-in-out infinite;
+}
+.shiny-spark {
+  position: absolute;
+  top: 8px; right: 8px;
+  font-size: 32px;
+  animation: bob 1.4s ease-in-out infinite;
+}
+
+/* ------------------------------------------------------------
    Pet emoji with RARITY HALO — drop-in upgrade for all
    pet-emoji / dex-emoji / mini-emoji / starter-emoji
 ------------------------------------------------------------ */
