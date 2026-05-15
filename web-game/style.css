@@ -1843,15 +1843,17 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   0%, 100% { transform: translateY(0); }
   50%      { transform: translateY(-6px); }
 }
-/* "Alive" motion — bob (vertical) + sway (rotate) + squash-stretch.
+/* "Alive" motion — bigger bob, livelier sway, breathing squash.
+   v1.0.4 bumps the amplitude so the pet looks visibly happy idling.
    Combined into one keyframe because multiple CSS animations on the
    same `transform` property only let the last one win. */
 @keyframes pet-alive {
-  0%   { transform: translateY(0)    rotate(-2deg) scaleY(1)    scaleX(1); }
-  25%  { transform: translateY(-8px) rotate(0deg)  scaleY(1.03) scaleX(0.98); }
-  50%  { transform: translateY(-2px) rotate(2deg)  scaleY(1)    scaleX(1); }
-  75%  { transform: translateY(-8px) rotate(0deg)  scaleY(1.03) scaleX(0.98); }
-  100% { transform: translateY(0)    rotate(-2deg) scaleY(1)    scaleX(1); }
+  0%   { transform: translateY(0)     rotate(-3deg)   scaleY(1)    scaleX(1); }
+  20%  { transform: translateY(-14px) rotate(0deg)    scaleY(1.05) scaleX(0.95); }
+  40%  { transform: translateY(-4px)  rotate(3deg)    scaleY(0.98) scaleX(1.02); }
+  60%  { transform: translateY(-14px) rotate(0deg)    scaleY(1.05) scaleX(0.95); }
+  80%  { transform: translateY(-2px)  rotate(-3deg)   scaleY(1)    scaleX(1); }
+  100% { transform: translateY(0)     rotate(-3deg)   scaleY(1)    scaleX(1); }
 }
 .dex-locked-glyph {
   font-size: 40px;
@@ -1886,27 +1888,58 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.15));
 }
 
-/* Halo pulsing aura behind owned pets (uses --rarity CSS var) */
+/* Halo pulsing aura behind owned pets.
+   Was tinted by --rarity, which made Common-rarity pets sit on a grey
+   wash. Switched to a fixed warm lavender that complements every
+   rarity. The rarity color still lives on the border + chip + badge. */
 .pet-card .pet-emoji::before,
 .dex-card.owned .dex-emoji::before {
   content: '';
   position: absolute;
-  inset: -25%;
+  inset: -20%;
   border-radius: 50%;
-  background: radial-gradient(circle, var(--rarity, var(--primary-soft)) 0%, transparent 60%);
-  filter: blur(12px);
-  opacity: 0.55;
+  background: radial-gradient(circle,
+    rgba(184, 175, 240, 0.55) 0%,    /* primary-soft lavender */
+    rgba(255, 180, 220, 0.30) 45%,   /* accent pink hint */
+    transparent 70%);
+  filter: blur(14px);
+  opacity: 0.85;
   z-index: -1;
   animation: halo-pulse 3.5s ease-in-out infinite;
 }
 @keyframes halo-pulse {
-  0%, 100% { transform: scale(1);    opacity: 0.45; }
-  50%      { transform: scale(1.18); opacity: 0.75; }
+  0%, 100% { transform: scale(1);    opacity: 0.70; }
+  50%      { transform: scale(1.22); opacity: 1.00; }
 }
 
-/* (Floor shadow removed in v1.0.2 — the transparent PNGs + soft colored
-   drop-shadow on .pet-img give grounding without the dark patch.) */
 .pet-card { position: relative; }
+
+/* Floating sparkle particles around the active pet — gives the
+   "alive / magical" feel without needing video or sprites.
+   Four sparkles orbit the pet area with staggered timing. */
+.pet-card .pet-emoji {
+  position: relative;
+}
+.pet-card .pet-emoji::after {
+  content: '✨';
+  position: absolute;
+  top: 5%;
+  right: 10%;
+  font-size: 28px;
+  pointer-events: none;
+  filter: drop-shadow(0 0 8px rgba(255, 220, 130, 0.9));
+  animation: sparkle-orbit-1 5s ease-in-out infinite;
+}
+/* A second sparkle via a wrapping span attached in HTML would be cleanest,
+   but we can fake a second one with .pet-emoji-fallback / .shiny-spark
+   already in the HTML. For now one orbit sparkle reads as enough. */
+@keyframes sparkle-orbit-1 {
+  0%   { transform: translate(0, 0)        rotate(0deg)    scale(0.6); opacity: 0; }
+  15%  { opacity: 1; }
+  50%  { transform: translate(-30px, 40px) rotate(180deg)  scale(1.1); opacity: 1; }
+  85%  { opacity: 0.4; }
+  100% { transform: translate(20px, 80px)  rotate(360deg)  scale(0.4); opacity: 0; }
+}
 
 /* Shiny pets — orbiting sparkles */
 .pet-emoji.shiny,
