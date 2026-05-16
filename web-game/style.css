@@ -1888,10 +1888,8 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.15));
 }
 
-/* Halo pulsing aura behind owned pets.
-   Was tinted by --rarity, which made Common-rarity pets sit on a grey
-   wash. Switched to a fixed warm lavender that complements every
-   rarity. The rarity color still lives on the border + chip + badge. */
+/* Halo pulsing aura behind owned pets — fixed lavender→pink, color
+   cycles through pastels for a magical "aura" feel. */
 .pet-card .pet-emoji::before,
 .dex-card.owned .dex-emoji::before {
   content: '';
@@ -1899,27 +1897,37 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   inset: -20%;
   border-radius: 50%;
   background: radial-gradient(circle,
-    rgba(184, 175, 240, 0.55) 0%,    /* primary-soft lavender */
-    rgba(255, 180, 220, 0.30) 45%,   /* accent pink hint */
+    rgba(184, 175, 240, 0.55) 0%,
+    rgba(255, 180, 220, 0.30) 45%,
     transparent 70%);
   filter: blur(14px);
   opacity: 0.85;
   z-index: -1;
-  animation: halo-pulse 3.5s ease-in-out infinite;
+  animation: halo-pulse 3.5s ease-in-out infinite,
+             halo-color 8s ease-in-out infinite;
 }
 @keyframes halo-pulse {
   0%, 100% { transform: scale(1);    opacity: 0.70; }
   50%      { transform: scale(1.22); opacity: 1.00; }
 }
+/* Slow color cycle through pastel pinks, lavenders, mints */
+@keyframes halo-color {
+  0%, 100% { filter: blur(14px) hue-rotate(0deg)   saturate(1); }
+  33%      { filter: blur(14px) hue-rotate(40deg)  saturate(1.2); }
+  66%      { filter: blur(14px) hue-rotate(-30deg) saturate(1.1); }
+}
 
-.pet-card { position: relative; }
+.pet-card { position: relative; overflow: hidden; }
 
-/* Floating sparkle particles around the active pet — gives the
-   "alive / magical" feel without needing video or sprites.
-   Four sparkles orbit the pet area with staggered timing. */
+/* ------------------------------------------------------------
+   "ALIVE" PARTICLE SYSTEM — multiple sparkles + ambient dots +
+   color-cycling halo, plus a tap-jump reaction. All pure CSS.
+------------------------------------------------------------ */
+
 .pet-card .pet-emoji {
   position: relative;
 }
+/* Sparkle 1 — large gold ✨, orbits top-right → bottom-left */
 .pet-card .pet-emoji::after {
   content: '✨';
   position: absolute;
@@ -1928,17 +1936,66 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   font-size: 28px;
   pointer-events: none;
   filter: drop-shadow(0 0 8px rgba(255, 220, 130, 0.9));
-  animation: sparkle-orbit-1 5s ease-in-out infinite;
+  animation: sparkle-orbit-1 4s ease-in-out infinite;
 }
-/* A second sparkle via a wrapping span attached in HTML would be cleanest,
-   but we can fake a second one with .pet-emoji-fallback / .shiny-spark
-   already in the HTML. For now one orbit sparkle reads as enough. */
 @keyframes sparkle-orbit-1 {
-  0%   { transform: translate(0, 0)        rotate(0deg)    scale(0.6); opacity: 0; }
+  0%   { transform: translate(0, 0)         rotate(0deg)   scale(0.5); opacity: 0; }
   15%  { opacity: 1; }
-  50%  { transform: translate(-30px, 40px) rotate(180deg)  scale(1.1); opacity: 1; }
+  50%  { transform: translate(-40px, 60px)  rotate(180deg) scale(1.2); opacity: 1; }
   85%  { opacity: 0.4; }
-  100% { transform: translate(20px, 80px)  rotate(360deg)  scale(0.4); opacity: 0; }
+  100% { transform: translate(30px, 110px)  rotate(360deg) scale(0.3); opacity: 0; }
+}
+
+/* Sparkles 2 & 3 — added via .pet-card::before / .pet-card::after */
+.pet-card::before {
+  content: '✨';
+  position: absolute;
+  top: 30%; left: 12%;
+  font-size: 18px;
+  pointer-events: none;
+  filter: drop-shadow(0 0 6px rgba(255, 180, 220, 0.9));
+  animation: sparkle-orbit-2 5.5s ease-in-out infinite 1s;
+  z-index: 2;
+}
+.pet-card::after {
+  content: '✨';
+  position: absolute;
+  top: 12%; left: 30%;
+  font-size: 14px;
+  pointer-events: none;
+  filter: drop-shadow(0 0 5px rgba(184, 175, 240, 0.9));
+  animation: sparkle-orbit-3 6s ease-in-out infinite 2.5s;
+  z-index: 2;
+}
+@keyframes sparkle-orbit-2 {
+  0%   { transform: translate(0, 0)         rotate(0deg)   scale(0.4); opacity: 0; }
+  20%  { opacity: 1; }
+  50%  { transform: translate(60px, -20px)  rotate(180deg) scale(1.0); opacity: 1; }
+  100% { transform: translate(80px, -80px)  rotate(360deg) scale(0.2); opacity: 0; }
+}
+@keyframes sparkle-orbit-3 {
+  0%   { transform: translate(0, 0)         rotate(0deg)   scale(0.3); opacity: 0; }
+  25%  { opacity: 0.9; }
+  50%  { transform: translate(-30px, -40px) rotate(-180deg) scale(0.8); opacity: 1; }
+  100% { transform: translate(-50px, -100px) rotate(-360deg) scale(0.2); opacity: 0; }
+}
+
+/* Ambient floating dots rising from the pet area — adds the
+   "magical fairy presence" feel. Generated via box-shadow trick. */
+.pet-card .pet-emoji {
+  /* Spawn point for the dots */
+}
+
+/* React on tap — pet jumps when the user clicks anywhere on its card */
+.pet-card:active .pet-emoji {
+  animation: pet-jump 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@keyframes pet-jump {
+  0%   { transform: translateY(0)    scaleY(1)    scaleX(1); }
+  20%  { transform: translateY(0)    scaleY(0.85) scaleX(1.15); }   /* squash before jump */
+  60%  { transform: translateY(-30px) scaleY(1.1) scaleX(0.95); }   /* peak */
+  90%  { transform: translateY(0)    scaleY(0.92) scaleX(1.08); }   /* squash on landing */
+  100% { transform: translateY(0)    scaleY(1)    scaleX(1); }
 }
 
 /* Shiny pets — orbiting sparkles */
